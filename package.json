@@ -1,0 +1,80 @@
+{
+  "name": "vibelearn",
+  "displayName": "VibeLearn",
+  "description": "Passive learning layer for AI-assisted development",
+  "version": "0.0.1",
+  "publisher": "vibelearn",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Education", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "vibelearn.quizNow",
+        "title": "VibeLearning: Quiz Me Now"
+      },
+      {
+        "command": "vibelearn.snooze",
+        "title": "VibeLearning: Snooze (10 min)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "vibelearn",
+          "title": "VibeLearn",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "vibelearn": [
+        {
+          "type": "webview",
+          "id": "vibelearn.panel",
+          "name": "Learning"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "VibeLearn",
+      "properties": {
+        "vibelearn.promptTriggerCount": {
+          "type": "number",
+          "default": 10,
+          "description": "Number of AI prompts before a learning intervention is triggered."
+        },
+        "vibelearn.sessionGapMinutes": {
+          "type": "number",
+          "default": 10,
+          "description": "Minutes of inactivity before a session-gap intervention is triggered."
+        },
+        "vibelearn.anthropicApiKey": {
+          "type": "string",
+          "default": "",
+          "description": "Your Anthropic API key. Required for generating interventions."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.js",
+    "watch": "node esbuild.js --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "package": "vsce package"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.36.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.20.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  }
+}
