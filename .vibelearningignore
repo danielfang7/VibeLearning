@@ -1,0 +1,12 @@
+# Files and directories VibeLearn will NOT send to the Claude API.
+# Syntax follows .gitignore glob patterns.
+
+# Secrets and credentials
+.env
+.env.*
+**/*.pem
+**/*.key
+**/secrets/**
+**/credentials/**
+
+# Add project-specific paths below:

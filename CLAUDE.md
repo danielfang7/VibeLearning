@@ -18,7 +18,7 @@ Early-stage. Scaffold not yet created. Starting with Phase 1 MVP (see Roadmap be
 |---|---|
 | Extension | VS Code Extension (TypeScript) |
 | AI | Anthropic Claude API (`claude-sonnet-4-6`) |
-| Local DB | SQLite via `better-sqlite3` |
+| Local DB | JSON file (upgrade to SQLite in Phase 2 if needed) |
 | Bundler | `esbuild` |
 | Testing | `vitest` |
 
@@ -26,7 +26,17 @@ Early-stage. Scaffold not yet created. Starting with Phase 1 MVP (see Roadmap be
 
 ## Build / Run / Test Commands
 
-_To be filled in once the extension scaffold is created._
+```bash
+npm install          # install dependencies
+npm run build        # bundle with esbuild → dist/extension.js
+npm run watch        # rebuild on file changes
+npm test             # run vitest unit tests
+npm run test:watch   # vitest in watch mode
+npm run package      # produce .vsix via vsce
+```
+
+**Running in VS Code:** Press `F5` (with the extension host launch config) or use `Run Extension` from the Run panel.
+
 
 ## Architecture
 
@@ -86,7 +96,7 @@ interface Intervention {
 
 ## Learning Trigger Loop
 
-Default: every **5 AI prompts** OR after a **10-minute session gap** (both user-configurable).
+Default: every **10 AI prompts** OR after a **10-minute session gap** (both user-configurable).
 
 ```
 Dev makes X prompts → collect diffs/context → pre-pass extracts concepts (cheap)
@@ -145,7 +155,3 @@ Diffs may contain sensitive code. v1 must include:
 - Clear disclosure of what is sent to Claude API
 - Support for `.vibelearningignore` to exclude paths
 - Cap context at ~2000 tokens of diff per trigger
-
-## Repository Notes
-
-- `install.cmd` is a Windows batch script for installing Claude Code itself — not part of the application.

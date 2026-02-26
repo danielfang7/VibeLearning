@@ -1,0 +1,8 @@
+src/**
+node_modules/**
+esbuild.js
+tsconfig.json
+vitest.config.ts
+*.map
+.gitignore
+.vibelearningignore
