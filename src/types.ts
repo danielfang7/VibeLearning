@@ -20,6 +20,7 @@ export interface SessionContext {
   diffs: FileDiff[];
   languages: string[];
   concepts: string[];   // AI-extracted: "React hooks", "async/await", etc.
+  recentCommits: string[]; // recent git commit messages for richer context
   timestamp: number;
   triggerReason: TriggerReason;
 }
@@ -53,4 +54,6 @@ export interface SessionAdapter {
   onFileChanged(cb: (diff: FileDiff) => void): void;
   getPromptCount(): number;
   dispose(): void;
+  /** Optional: advance the session window so the next quiz only sees fresh prompts. */
+  markQuizTriggered?(): void;
 }

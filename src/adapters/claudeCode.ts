@@ -17,6 +17,8 @@ export class ClaudeCodeAdapter implements SessionAdapter {
   private watchers: fs.FSWatcher[] = [];
   // Track per-file line offsets so we don't re-parse the same lines
   private lastSeenLines = new Map<string, number>();
+  // Track where we left off after each quiz so we only surface new prompts next time
+  private lastQuizLineOffset = new Map<string, number>();
 
   constructor(private readonly workspacePath: string) {
     this.startWatching();
@@ -38,15 +40,34 @@ export class ClaudeCodeAdapter implements SessionAdapter {
     const recentPrompts = this.readRecentPrompts();
     const diffs = this.getGitDiffs();
     const languages = detectLanguages(diffs);
+    const recentCommits = this.getRecentCommitMessages();
 
     return {
       prompts: recentPrompts,
       diffs,
       languages,
       concepts: [], // filled in by the Intervention Engine pre-pass
+      recentCommits,
       timestamp: Date.now(),
       triggerReason,
     };
+  }
+
+  /** Call after each quiz so the next quiz only sees fresh prompts. */
+  markQuizTriggered(): void {
+    const projectDir = this.resolveProjectDir();
+    if (!projectDir || !fs.existsSync(projectDir)) return;
+
+    const files = fs.readdirSync(projectDir).filter((f) => f.endsWith('.jsonl'));
+    for (const file of files) {
+      const filePath = path.join(projectDir, file);
+      try {
+        const lines = fs.readFileSync(filePath, 'utf-8').split('\n').filter(Boolean);
+        this.lastQuizLineOffset.set(filePath, lines.length);
+      } catch {
+        // ignore unreadable files
+      }
+    }
   }
 
   dispose(): void {
@@ -115,36 +136,89 @@ export class ClaudeCodeAdapter implements SessionAdapter {
       .filter((f) => f.endsWith('.jsonl'))
       .map((f) => ({
         file: f,
+        filePath: path.join(projectDir, f),
         mtime: fs.statSync(path.join(projectDir, f)).mtimeMs,
       }))
       .sort((a, b) => b.mtime - a.mtime);
 
     const prompts: string[] = [];
-    for (const { file } of files) {
-      const content = fs.readFileSync(path.join(projectDir, file), 'utf-8');
-      for (const line of content.split('\n').filter(Boolean)) {
+    for (const { filePath } of files) {
+      try {
+        const content = fs.readFileSync(filePath, 'utf-8');
+        const lines = content.split('\n').filter(Boolean);
+        // Only read lines since the last quiz for this file
+        const startLine = this.lastQuizLineOffset.get(filePath) ?? 0;
+        const newLines = startLine > 0 ? lines.slice(startLine) : lines;
+
+        for (const line of newLines) {
+          try {
+            const entry = JSON.parse(line);
+            if (isUserPrompt(entry)) {
+              prompts.push(entry.message.content as string);
+            }
+          } catch {
+            // skip malformed lines
+          }
+        }
+      } catch {
+        // skip unreadable files
+      }
+      if (prompts.length >= limit) break;
+    }
+
+    // If no new prompts since last quiz, fall back to recent history so Claude has context
+    if (prompts.length === 0) {
+      for (const { filePath } of files) {
         try {
-          const entry = JSON.parse(line);
-          if (isUserPrompt(entry)) {
-            prompts.push(entry.message.content as string);
+          const content = fs.readFileSync(filePath, 'utf-8');
+          for (const line of content.split('\n').filter(Boolean)) {
+            try {
+              const entry = JSON.parse(line);
+              if (isUserPrompt(entry)) prompts.push(entry.message.content as string);
+            } catch {
+              // skip
+            }
           }
         } catch {
           // skip
         }
+        if (prompts.length >= limit) break;
       }
-      if (prompts.length >= limit) break;
     }
+
     return prompts.slice(-limit);
   }
 
   private getGitDiffs(): FileDiff[] {
     try {
-      const raw = execSync('git diff HEAD', {
+      // First try uncommitted changes
+      const uncommitted = execSync('git diff HEAD', {
         cwd: this.workspacePath,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-      return parseDiffs(raw);
+      if (uncommitted.trim()) return parseDiffs(uncommitted);
+
+      // Fall back to last 5 commits when there's nothing uncommitted
+      const committed = execSync('git diff HEAD~5 HEAD', {
+        cwd: this.workspacePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return parseDiffs(committed);
+    } catch {
+      return [];
+    }
+  }
+
+  private getRecentCommitMessages(limit = 10): string[] {
+    try {
+      const log = execSync(`git log --oneline -${limit}`, {
+        cwd: this.workspacePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return log.trim().split('\n').filter(Boolean);
     } catch {
       return [];
     }

@@ -167,6 +167,9 @@ async function triggerIntervention(
   const engine = new InterventionEngine(apiKey);
   const intervention = await engine.generate(context, knowledgeState);
 
+  // Advance the session window so the next quiz only sees prompts added after this point
+  adapter.markQuizTriggered?.();
+
   // Store so the answer handler can compare against the correct answer and concept tags
   currentIntervention = intervention;
   panel.showIntervention(intervention);

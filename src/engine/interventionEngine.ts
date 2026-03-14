@@ -60,12 +60,19 @@ function buildPrompt(context: SessionContext, knowledgeState: KnowledgeState): s
 
   const availableFormats = PHASE_1_TYPES.join(', ');
 
+  const commitSummary = context.recentCommits.slice(0, 5).join('\n') || 'No recent commits.';
+  const sessionTimestamp = new Date(context.timestamp).toISOString();
+
   return `You are a developer education assistant. A developer just finished an AI-assisted coding session.
+
+Session timestamp: ${sessionTimestamp}
 
 Session Summary:
 - Concepts touched: ${context.concepts.join(', ') || 'unknown'}
 - Languages/frameworks: ${context.languages.join(', ') || 'unknown'}
 - Recent prompts: ${context.prompts.slice(-3).map((p) => `"${p}"`).join('; ')}
+- Recent commits:
+${commitSummary}
 - Key changes (truncated):
 ${diffSummary}
 
@@ -90,7 +97,8 @@ Rules:
 - Keep it short. Should take under 60 seconds to answer.
 - Be conversational, not academic. "Hey, you just used X — do you know how it differs from Y?"
 - If the concept is advanced, prefer micro_reading over a hard quiz.
-- Never repeat a concept with seenCount > 3 unless its nextReview date has passed.`;
+- Never repeat a concept with seenCount > 3 unless its nextReview date has passed.
+- IMPORTANT: Pick a DIFFERENT concept and format than any recently seen intervention. Vary the question each time — rotate through different aspects of the codebase, different language features, and different intervention formats.`;
 }
 
 function parseIntervention(text: string): Intervention {
