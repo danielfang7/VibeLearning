@@ -3,6 +3,8 @@ import path from 'path';
 import os from 'os';
 import { execSync } from 'child_process';
 import type { FileDiff, SessionAdapter, SessionContext, TriggerReason } from '../types';
+import { logger } from '../logger';
+import { DIFF_CHAR_LIMIT } from '../engine/interventionEngine';
 
 // Claude Code writes conversation logs under ~/.claude/projects/<encoded-path>/
 // Each project directory contains JSONL files for each session.
@@ -189,6 +191,19 @@ export class ClaudeCodeAdapter implements SessionAdapter {
     return prompts.slice(-limit);
   }
 
+  getFileStructure(): string[] {
+    try {
+      const output = execSync('git ls-files --name-only', {
+        cwd: this.workspacePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return output.trim().split('\n').filter(Boolean);
+    } catch {
+      return [];
+    }
+  }
+
   private getGitDiffs(): FileDiff[] {
     try {
       // First try uncommitted changes
@@ -197,7 +212,7 @@ export class ClaudeCodeAdapter implements SessionAdapter {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-      if (uncommitted.trim()) return parseDiffs(uncommitted);
+      if (uncommitted.trim()) return parseDiffs(uncommitted, DIFF_CHAR_LIMIT);
 
       // Fall back to last 5 commits when there's nothing uncommitted
       const committed = execSync('git diff HEAD~5 HEAD', {
@@ -205,7 +220,7 @@ export class ClaudeCodeAdapter implements SessionAdapter {
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-      return parseDiffs(committed);
+      return parseDiffs(committed, DIFF_CHAR_LIMIT);
     } catch {
       return [];
     }
@@ -238,13 +253,20 @@ function isUserPrompt(entry: Record<string, unknown>): boolean {
   return content.trim().length > 0;
 }
 
-function parseDiffs(raw: string): FileDiff[] {
+function parseDiffs(raw: string, charLimit?: number): FileDiff[] {
   const diffs: FileDiff[] = [];
   const fileBlocks = raw.split(/^diff --git /m).filter(Boolean);
+  let totalChars = 0;
+
   for (const block of fileBlocks) {
+    if (charLimit !== undefined && totalChars >= charLimit) {
+      logger.warn(`parseDiffs: diff budget (${charLimit} chars) reached, ${fileBlocks.length - diffs.length} file(s) omitted`);
+      break;
+    }
     const match = block.match(/^a\/.+ b\/(.+)\n/);
     if (match) {
       diffs.push({ path: match[1], diff: block });
+      totalChars += block.length;
     }
   }
   return diffs;
