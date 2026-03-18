@@ -19,6 +19,10 @@
       {
         "command": "vibelearn.snooze",
         "title": "VibeLearning: Snooze (10 min)"
+      },
+      {
+        "command": "vibelearn.explainCodebase",
+        "title": "VibeLearning: Explain My Codebase"
       }
     ],
     "viewsContainers": {
