@@ -8,7 +8,8 @@ export type InterventionType =
   | 'spot_the_bug'      // Mutated version of their code
   | 'micro_reading'     // 2–3 sentence explanation + docs link
   | 'refactor_challenge'// "How would you rewrite this without the AI?"
-  | 'analogy_prompt';   // "This design pattern is like ___ because ___"
+  | 'analogy_prompt'    // "This design pattern is like ___ because ___"
+  | 'session_narrative';// Post-session architectural debrief or on-demand explain
 
 export interface FileDiff {
   path: string;
@@ -42,8 +43,22 @@ export interface ConceptRecord {
   nextReview: string;   // ISO date string
 }
 
+export interface DebriefRating {
+  timestamp: string;    // ISO date string
+  stars: number;        // 1–5
+  conceptTags: string[];
+}
+
 export interface KnowledgeState {
   concepts: Record<string, ConceptRecord>;
+  debriefRatings?: DebriefRating[];
+}
+
+export interface CodebaseStoryEntry {
+  timestamp: string;    // ISO date string
+  title: string;        // Short title from the debrief
+  summary: string;      // Narrative body
+  conceptTags: string[];
 }
 
 // PRD §9 — all adapters implement this interface
@@ -56,4 +71,6 @@ export interface SessionAdapter {
   dispose(): void;
   /** Optional: advance the session window so the next quiz only sees fresh prompts. */
   markQuizTriggered?(): void;
+  /** Optional: return a list of tracked files for codebase explain. */
+  getFileStructure?(): string[];
 }

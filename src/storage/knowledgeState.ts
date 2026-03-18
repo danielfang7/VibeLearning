@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { ConceptRecord, KnowledgeState } from '../types';
+import type { ConceptRecord, DebriefRating, KnowledgeState } from '../types';
 
 // JSON-file-backed knowledge state. Simple and dependency-free.
 // Stored at <VS Code globalStoragePath>/knowledge.json
@@ -43,6 +43,19 @@ export class KnowledgeStateStore {
     this.save();
   }
 
+  recordRating(stars: number, conceptTags: string[]): void {
+    const rating: DebriefRating = {
+      timestamp: new Date().toISOString(),
+      stars,
+      conceptTags,
+    };
+    if (!this.state.debriefRatings) {
+      this.state.debriefRatings = [];
+    }
+    this.state.debriefRatings.push(rating);
+    this.save();
+  }
+
   dispose(): void {
     // nothing to close
   }
@@ -50,9 +63,11 @@ export class KnowledgeStateStore {
   private load(): KnowledgeState {
     try {
       const raw = fs.readFileSync(this.filePath, 'utf-8');
-      return JSON.parse(raw) as KnowledgeState;
+      const parsed = JSON.parse(raw) as KnowledgeState;
+      // Ensure debriefRatings exists for older knowledge.json files
+      return { debriefRatings: [], ...parsed };
     } catch {
-      return { concepts: {} };
+      return { concepts: {}, debriefRatings: [] };
     }
   }
 
