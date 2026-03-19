@@ -4,19 +4,9 @@ Deferred work from planning sessions. Each item has context for future pickup.
 
 ---
 
-## P2: Remaining Intervention Types
+## ~~P2: Remaining Intervention Types~~ ✅ Done
 
-**What:** Add `spot_the_bug`, `refactor_challenge`, and `analogy_prompt` intervention types to the engine and panel.
-
-**Why:** Variety makes quiz sessions more engaging and covers deeper learning modes. `spot_the_bug` shows a mutated version of recent code. `refactor_challenge` asks the developer to rewrite it. `analogy_prompt` asks them to explain a design pattern by analogy.
-
-**Pros:** More engaging quizzes, tests applied knowledge not just recall, covers the full learning taxonomy.
-
-**Cons:** Each type needs a distinct prompt strategy and UI template. `spot_the_bug` requires code mutation logic.
-
-**Context:** Types are already defined in `src/types.ts`. The engine gates them in `PHASE_1_TYPES` at `src/engine/interventionEngine.ts:17`. Unlocking = extending `PHASE_1_TYPES` + adding prompt branches + new panel HTML templates. Start with `spot_the_bug` as it has the highest learning value.
-
-**Effort:** S (human ~1 day / CC ~15 min) | **Priority:** P2 | **Depends on:** The Debrief shipped first
+Shipped. `spot_the_bug`, `refactor_challenge`, and `analogy_prompt` are now live. The engine selects from all 6 quiz types. `spot_the_bug` and `refactor_challenge` render code snippets in `<pre><code>` blocks via updated `renderMarkdown()`. `spot_the_bug` is graded (MCQ); the others are free-text. All types are user-configurable via `vibelearn.enabledInterventionTypes`.
 
 ---
 

@@ -60,6 +60,43 @@
           "type": "string",
           "default": "",
           "description": "Your Anthropic API key. Required for generating interventions."
+        },
+        "vibelearn.enabledInterventionTypes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "concept_check",
+              "explain_it_back",
+              "micro_reading",
+              "spot_the_bug",
+              "refactor_challenge",
+              "analogy_prompt"
+            ]
+          },
+          "default": [
+            "concept_check",
+            "explain_it_back",
+            "micro_reading",
+            "spot_the_bug",
+            "refactor_challenge",
+            "analogy_prompt"
+          ],
+          "description": "Which quiz types VibeLearn can generate. Remove a type to disable it."
+        },
+        "vibelearn.minDifficulty": {
+          "type": "number",
+          "default": 1,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Minimum difficulty score (1–5) for quiz interventions. Increase to skip easy questions."
+        },
+        "vibelearn.maxDifficulty": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 5,
+          "description": "Maximum difficulty score (1–5) for quiz interventions. Decrease to avoid hard questions."
         }
       }
     }

@@ -8,11 +8,19 @@ export function escHtml(str: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Minimal markdown → HTML: bold, line breaks. Safe to call on already-escaped strings. */
+/** Minimal markdown → HTML: code fences, bold, line breaks. */
 export function renderMarkdown(raw: string): string {
-  return escHtml(raw)
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n/g, '<br>');
+  // Split on fenced code blocks first to avoid escaping code content incorrectly
+  const parts = raw.split(/(```[\w]*\n[\s\S]*?```)/g);
+  return parts.map((part) => {
+    if (part.startsWith('```')) {
+      const code = part.replace(/^```\w*\n?/, '').replace(/\n?```$/, '');
+      return `<pre><code>${escHtml(code)}</code></pre>`;
+    }
+    return escHtml(part)
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n/g, '<br>');
+  }).join('');
 }
 
 export function getLoadingHtml(message: string): string {
@@ -66,6 +74,11 @@ export function html(body: string): string {
   .story-date { font-size: 0.75rem; color: var(--vscode-descriptionForeground); margin-bottom: 4px; }
   strong { color: var(--vscode-foreground); }
   .section-body { font-size: 0.875rem; line-height: 1.6; margin: 0 0 12px; }
+  pre  { background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+         border: 1px solid var(--vscode-editorWidget-border, transparent);
+         border-radius: 4px; padding: 10px 12px; overflow-x: auto; margin: 0 0 12px; }
+  code { font-family: var(--vscode-editor-font-family, monospace); font-size: 0.8rem;
+         white-space: pre; }
 </style>
 </head>
 <body>${body}</body>

@@ -2,12 +2,12 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeCodeAdapter } from './adapters/claudeCode';
-import { InterventionEngine } from './engine/interventionEngine';
+import { InterventionEngine, ALL_QUIZ_TYPES, type QuizConfig } from './engine/interventionEngine';
 import { KnowledgeStateStore } from './storage/knowledgeState';
 import { CodebaseStoryStore } from './storage/codebaseStoryStore';
 import { VibeLearnPanel } from './ui/panel';
 import { logger } from './logger';
-import type { Intervention, SessionAdapter, TriggerReason } from './types';
+import type { Intervention, InterventionType, SessionAdapter, TriggerReason } from './types';
 
 let adapter: SessionAdapter | undefined;
 let store: KnowledgeStateStore | undefined;
@@ -60,8 +60,10 @@ export function activate(context: vscode.ExtensionContext): void {
     let score: number;
     let isCorrect: boolean;
 
-    if (currentIntervention.type === 'concept_check' && currentIntervention.answer) {
-      isCorrect = answer.trim() === currentIntervention.answer.trim();
+    const isGraded = (currentIntervention.type === 'concept_check' || currentIntervention.type === 'spot_the_bug')
+      && currentIntervention.answer;
+    if (isGraded) {
+      isCorrect = answer.trim() === currentIntervention.answer!.trim();
       score = isCorrect ? 1 : 0;
     } else {
       score = 0.5;
@@ -240,7 +242,12 @@ async function triggerIntervention(
         });
       }
     } else {
-      intervention = await engine.generateQuiz(context, knowledgeState);
+      const quizConfig: QuizConfig = {
+        enabledTypes: getSetting<InterventionType[]>('enabledInterventionTypes', ALL_QUIZ_TYPES as InterventionType[]),
+        minDifficulty: getSetting<number>('minDifficulty', 1),
+        maxDifficulty: getSetting<number>('maxDifficulty', 5),
+      };
+      intervention = await engine.generateQuiz(context, knowledgeState, quizConfig);
       adapter.markQuizTriggered?.();
       currentIntervention = intervention;
       panel.showIntervention(intervention);

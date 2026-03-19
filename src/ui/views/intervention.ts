@@ -1,5 +1,5 @@
 import type { Intervention } from '../../types';
-import { html, escHtml } from './shared';
+import { html, escHtml, renderMarkdown } from './shared';
 
 function formatType(type: string): string {
   return type.replace(/_/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase());
@@ -20,7 +20,7 @@ export function getInterventionHtml(intervention: Intervention): string {
     <div class="intervention">
       <div class="tag">${formatType(intervention.type)} · difficulty ${intervention.difficultyScore}/5</div>
       <h2>${escHtml(intervention.title)}</h2>
-      <p>${escHtml(intervention.body)}</p>
+      <div class="body">${renderMarkdown(intervention.body)}</div>
       <div class="options">${optionsHtml}</div>
       <div class="actions">
         <button class="secondary" onclick="postMsg('snooze')">Snooze 10 min</button>

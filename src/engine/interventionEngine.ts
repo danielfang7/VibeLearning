@@ -7,11 +7,20 @@ import type { CodebaseStoryEntry, Intervention, InterventionType, KnowledgeState
 //   generateDebrief — triggered by session_gap, explains what was built architecturally
 //   generateExplain — triggered manually, gives a full codebase architectural briefing
 
-const PHASE_1_QUIZ_TYPES: InterventionType[] = [
+export const ALL_QUIZ_TYPES: InterventionType[] = [
   'concept_check',
   'explain_it_back',
   'micro_reading',
+  'spot_the_bug',
+  'refactor_challenge',
+  'analogy_prompt',
 ];
+
+export interface QuizConfig {
+  enabledTypes?: InterventionType[];
+  minDifficulty?: number;
+  maxDifficulty?: number;
+}
 
 const DIFF_CHAR_LIMIT = 8000; // ~2000 tokens @ 4 chars/token
 
@@ -24,9 +33,10 @@ export class InterventionEngine {
 
   async generateQuiz(
     context: SessionContext,
-    knowledgeState: KnowledgeState
+    knowledgeState: KnowledgeState,
+    config?: QuizConfig
   ): Promise<Intervention> {
-    const prompt = buildQuizPrompt(context, knowledgeState);
+    const prompt = buildQuizPrompt(context, knowledgeState, config);
     const text = await this.callClaude(prompt);
     return parseIntervention(text, 'micro_reading');
   }
@@ -62,7 +72,7 @@ export class InterventionEngine {
 
 // ── Prompt builders ──────────────────────────────────────────────────────────
 
-function buildQuizPrompt(context: SessionContext, knowledgeState: KnowledgeState): string {
+function buildQuizPrompt(context: SessionContext, knowledgeState: KnowledgeState, config?: QuizConfig): string {
   const knowledgeSummary = Object.entries(knowledgeState.concepts)
     .map(([concept, record]) =>
       `- ${concept}: seen ${record.seenCount}x, avg score ${record.avgScore.toFixed(2)}, next review ${record.nextReview}`
@@ -71,7 +81,22 @@ function buildQuizPrompt(context: SessionContext, knowledgeState: KnowledgeState
 
   const diffSummary = buildDiffSummary(context.diffs);
   const commitSummary = context.recentCommits.slice(0, 5).join('\n') || 'No recent commits.';
-  const availableFormats = PHASE_1_QUIZ_TYPES.join(', ');
+
+  const enabledTypes = (config?.enabledTypes && config.enabledTypes.length > 0)
+    ? config.enabledTypes
+    : ALL_QUIZ_TYPES;
+  const minDiff = config?.minDifficulty ?? 1;
+  const maxDiff = Math.max(minDiff, config?.maxDifficulty ?? 5);
+
+  const TYPE_INSTRUCTIONS: Record<string, string> = {
+    concept_check: 'MCQ with exactly 4 options. Options must be plausible enough to require real understanding.',
+    explain_it_back: 'Free text (no options). Ask them to explain a specific function or pattern in 1-2 sentences. No answer field needed.',
+    micro_reading: 'Free text (no options). Provide a 2-3 sentence explanation, then ask one follow-up question. No answer field needed.',
+    spot_the_bug: 'Take a real code snippet from the diffs, introduce ONE subtle bug (off-by-one, wrong operator, missing await, swapped args, etc.), and put the BUGGY code in a markdown code fence in the body. MCQ with 4 options describing possible problems. The answer field is the correct option text.',
+    refactor_challenge: 'Take a real code snippet and challenge them to rewrite it (e.g., using a different pattern, without a library, more functionally). Put the original code in a markdown code fence in the body. Free text response (no options, no answer).',
+    analogy_prompt: 'Ask them to complete an analogy for a design pattern or concept. Body: "The [concept] is like ___ because ___". Free text. Set answer to a strong sample completion so it can be shown as feedback.',
+  };
+  const typeInstructions = `Format-specific requirements:\n${enabledTypes.map((t) => `- ${t}: ${TYPE_INSTRUCTIONS[t] ?? t}`).join('\n')}`;
 
   return `You are a developer education assistant. A developer just finished an AI-assisted coding session.
 
@@ -91,24 +116,27 @@ ${knowledgeSummary}
 
 Your job:
 1. Identify the single most valuable concept to test from this session.
-2. Choose the best intervention format from: ${availableFormats}
+2. Choose the best intervention format from: ${enabledTypes.join(', ')}
 3. Return ONLY a valid JSON object matching this schema (no markdown, no explanation):
 {
   "type": "<intervention type>",
   "title": "<short title, conversational tone>",
-  "body": "<the question or content, under 150 words>",
+  "body": "<the question or content — may include a markdown code fence for spot_the_bug/refactor_challenge>",
   "options": ["<option A>", "<option B>", "<option C>", "<option D>"],
-  "answer": "<correct answer>",
+  "answer": "<correct answer or sample answer for analogy_prompt>",
   "conceptTags": ["<tag1>", "<tag2>"],
-  "difficultyScore": <1-5>
+  "difficultyScore": <${minDiff}-${maxDiff}>
 }
 
-Rules:
+${typeInstructions}
+
+General rules:
 - Keep it short. Should take under 60 seconds to answer.
 - Be conversational, not academic. "Hey, you just used X — do you know how it differs from Y?"
 - If the concept is advanced, prefer micro_reading over a hard quiz.
 - Never repeat a concept with seenCount > 3 unless its nextReview date has passed.
-- IMPORTANT: Pick a DIFFERENT concept and format than any recently seen intervention.`;
+- Pick a DIFFERENT concept and format than any recently seen intervention.
+- difficultyScore must be between ${minDiff} and ${maxDiff}.`;
 }
 
 function buildDebriefPrompt(context: SessionContext, priorStory: CodebaseStoryEntry[]): string {

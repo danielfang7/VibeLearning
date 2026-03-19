@@ -134,9 +134,9 @@ Used for spaced repetition: avoid repeating too soon, increase difficulty on fam
 
 **Phase 2**
 - [ ] Cursor adapter
-- [ ] Remaining intervention types
+- [x] Remaining intervention types (spot_the_bug, refactor_challenge, analogy_prompt)
 - [ ] Spaced repetition scheduling
-- [ ] Configurable trigger thresholds
+- [x] Configurable trigger thresholds (enabledInterventionTypes, minDifficulty, maxDifficulty, promptTriggerCount, sessionGapMinutes)
 
 **Phase 3**
 - [ ] Streak tracking / learning history view

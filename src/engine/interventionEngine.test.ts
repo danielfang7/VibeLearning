@@ -174,6 +174,66 @@ describe('parseIntervention()', () => {
   });
 });
 
+describe('generateQuiz() with QuizConfig', () => {
+  it('restricts prompt to only enabled types', async () => {
+    mockResponse(quizJson({ type: 'spot_the_bug' }));
+    const engine = new InterventionEngine('sk-test');
+    await engine.generateQuiz(baseContext, baseKnowledgeState, {
+      enabledTypes: ['spot_the_bug'],
+    });
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain('spot_the_bug');
+    expect(prompt).not.toContain('concept_check');
+    expect(prompt).not.toContain('explain_it_back');
+  });
+
+  it('uses ALL_QUIZ_TYPES when enabledTypes is empty', async () => {
+    mockResponse(quizJson());
+    const engine = new InterventionEngine('sk-test');
+    await engine.generateQuiz(baseContext, baseKnowledgeState, { enabledTypes: [] });
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain('concept_check');
+    expect(prompt).toContain('spot_the_bug');
+  });
+
+  it('injects difficulty range into prompt', async () => {
+    mockResponse(quizJson());
+    const engine = new InterventionEngine('sk-test');
+    await engine.generateQuiz(baseContext, baseKnowledgeState, {
+      minDifficulty: 3,
+      maxDifficulty: 4,
+    });
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain('3-4');
+  });
+
+  it('clamps maxDifficulty to minDifficulty when inverted', async () => {
+    mockResponse(quizJson());
+    const engine = new InterventionEngine('sk-test');
+    await engine.generateQuiz(baseContext, baseKnowledgeState, {
+      minDifficulty: 4,
+      maxDifficulty: 2,
+    });
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    // max is clamped to min=4, so range should be 4-4
+    expect(prompt).toContain('4-4');
+    expect(prompt).not.toContain('4-2');
+  });
+
+  it('only shows format instructions for enabled types', async () => {
+    mockResponse(quizJson());
+    const engine = new InterventionEngine('sk-test');
+    await engine.generateQuiz(baseContext, baseKnowledgeState, {
+      enabledTypes: ['concept_check', 'micro_reading'],
+    });
+    const prompt = mockCreate.mock.calls[0][0].messages[0].content as string;
+    expect(prompt).toContain('- concept_check:');
+    expect(prompt).toContain('- micro_reading:');
+    expect(prompt).not.toContain('- spot_the_bug:');
+    expect(prompt).not.toContain('- refactor_challenge:');
+  });
+});
+
 describe('buildDiffSummary()', () => {
   it('returns a placeholder when diffs array is empty', () => {
     expect(buildDiffSummary([])).toBe('(no code changes detected)');
