@@ -5,18 +5,20 @@
       "name": "Run Extension",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "/Users/danielfang/vibelearn-test"],
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${env:VIBELEARN_TEST_WORKSPACE}"],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "build",
-      "sourceMaps": true
+      "sourceMaps": true,
+      "envFile": "${workspaceFolder}/.env.local"
     },
     {
       "name": "Run Extension (no rebuild)",
       "type": "extensionHost",
       "request": "launch",
-      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "/Users/danielfang/vibelearn-test"],
+      "args": ["--extensionDevelopmentPath=${workspaceFolder}", "${env:VIBELEARN_TEST_WORKSPACE}"],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
-      "sourceMaps": true
+      "sourceMaps": true,
+      "envFile": "${workspaceFolder}/.env.local"
     }
   ]
 }
