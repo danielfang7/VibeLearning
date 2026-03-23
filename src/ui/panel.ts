@@ -1,13 +1,13 @@
 import * as vscode from 'vscode';
 import type { CodebaseStoryEntry, Intervention } from '../types';
-import { getIdleHtml } from './views/idle';
+import { getIdleHtml, type LastConcept } from './views/idle';
 import { getInterventionHtml } from './views/intervention';
 import { getDebriefHtml } from './views/debrief';
 import { getRatingHtml } from './views/rating';
 import { getStoryHtml } from './views/story';
 import { getExplainHtml } from './views/explain';
 import { getFeedbackHtml } from './views/feedback';
-import { getLoadingHtml } from './views/shared';
+import { getLoadingHtml, getSetupHtml, getErrorHtml } from './views/shared';
 
 // Pending debrief/explain queued while the panel was not visible.
 type PendingContent =
@@ -26,12 +26,23 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
   // Story entry count for the idle view hint
   private storyEntryCount = 0;
 
+  // Session progress for the idle view progress bar
+  private promptCount = 0;
+  private promptThreshold = 10;
+
+  // Last reinforced concept for the idle view
+  private lastConcept?: LastConcept;
+
+  // Retry callback for the error view
+  private retryCallback?: () => void;
+
   // Callbacks registered by extension.ts
   private onQuizNowCallback?: () => void;
   private onSnoozeCallback?: () => void;
   private onAnswerCallback?: (answer: string, score: number) => void;
   private onRateCallback?: (stars: number, conceptTags: string[]) => void;
   private onExplainCodebaseCallback?: () => void;
+  private onOpenStoryCallback?: () => void;
 
   resolveWebviewView(
     webviewView: vscode.WebviewView,
@@ -41,8 +52,12 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
     this.view = webviewView;
     webviewView.webview.options = { enableScripts: true };
 
-    // Flush any content that was queued while the panel was hidden
-    if (this.pending) {
+    // Show setup screen if no API key is configured
+    const apiKey = vscode.workspace.getConfiguration('vibelearn').get<string>('anthropicApiKey', '');
+    if (!apiKey && !this.pending) {
+      webviewView.webview.html = getSetupHtml();
+    } else if (this.pending) {
+      // Flush any content that was queued while the panel was hidden
       const p = this.pending;
       this.pending = undefined;
       if (p.kind === 'debrief') {
@@ -51,8 +66,19 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
         this.showExplain(p.intervention);
       }
     } else {
-      webviewView.webview.html = getIdleHtml(this.storyEntryCount);
+      webviewView.webview.html = this.idleHtml();
     }
+
+    // Auto-update when API key is added in settings
+    const configListener = vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('vibelearn.anthropicApiKey') && this.view) {
+        const key = vscode.workspace.getConfiguration('vibelearn').get<string>('anthropicApiKey', '');
+        if (key) {
+          this.view.webview.html = this.idleHtml();
+        }
+      }
+    });
+    webviewView.onDidDispose(() => configListener.dispose());
 
     webviewView.webview.onDidReceiveMessage((msg: { type: string; payload?: unknown }) => {
       switch (msg.type) {
@@ -67,7 +93,19 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
           break;
         case 'skip':
         case 'skipRating':
-          webviewView.webview.html = getIdleHtml(this.storyEntryCount);
+          webviewView.webview.html = this.idleHtml();
+          break;
+        case 'openSettings':
+          vscode.commands.executeCommand('workbench.action.openSettings', 'vibelearn.anthropicApiKey');
+          break;
+        case 'retry':
+          if (this.retryCallback) {
+            const cb = this.retryCallback;
+            this.retryCallback = undefined;
+            cb();
+          } else {
+            webviewView.webview.html = this.idleHtml();
+          }
           break;
         case 'answer': {
           const { answer, score } = msg.payload as { answer: string; score: number };
@@ -75,7 +113,6 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
           break;
         }
         case 'continueDebrief': {
-          // Transition debrief → rating view
           const tags = msg.payload as string[] | undefined;
           if (tags) this.currentConceptTags = tags;
           webviewView.webview.html = getRatingHtml(this.currentConceptTags);
@@ -85,7 +122,7 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
           const { stars, conceptTags } = msg.payload as { stars: number; conceptTags: string[] };
           this.onRateCallback?.(stars, conceptTags);
           this.currentConceptTags = [];
-          webviewView.webview.html = getIdleHtml(this.storyEntryCount);
+          webviewView.webview.html = this.idleHtml();
           break;
         }
         case 'openStory':
@@ -128,9 +165,9 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
     this.view.show(true);
   }
 
-  showFeedback(wasCorrect: boolean, explanation: string): void {
+  showFeedback(wasCorrect: boolean, explanation: string, conceptTags: string[] = []): void {
     if (!this.view) return;
-    this.view.webview.html = getFeedbackHtml(wasCorrect, explanation);
+    this.view.webview.html = getFeedbackHtml(wasCorrect, explanation, conceptTags);
   }
 
   showLoading(message: string): void {
@@ -139,8 +176,35 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
     this.view.show(true);
   }
 
+  showSetup(): void {
+    if (!this.view) return;
+    this.view.webview.html = getSetupHtml();
+  }
+
+  showError(message: string, retryCallback?: () => void): void {
+    if (!this.view) return;
+    this.retryCallback = retryCallback;
+    this.view.webview.html = getErrorHtml(message, Boolean(retryCallback));
+  }
+
+  showIdle(): void {
+    if (!this.view) return;
+    this.view.webview.html = this.idleHtml();
+  }
+
+  // ── State setters ────────────────────────────────────────────────────────────
+
   setStoryEntryCount(count: number): void {
     this.storyEntryCount = count;
+  }
+
+  setPromptCount(count: number, threshold: number): void {
+    this.promptCount = count;
+    this.promptThreshold = threshold;
+  }
+
+  setLastConcept(tag: string, lastSeen: string, avgScore: number): void {
+    this.lastConcept = { tag, lastSeen, avgScore };
   }
 
   // ── Callback registration ───────────────────────────────────────────────────
@@ -150,7 +214,16 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
   onAnswer(cb: (answer: string, score: number) => void): void { this.onAnswerCallback = cb; }
   onRate(cb: (stars: number, conceptTags: string[]) => void): void { this.onRateCallback = cb; }
   onExplainCodebase(cb: () => void): void { this.onExplainCodebaseCallback = cb; }
-
-  private onOpenStoryCallback?: () => void;
   onOpenStory(cb: () => void): void { this.onOpenStoryCallback = cb; }
+
+  // ── Private helpers ──────────────────────────────────────────────────────────
+
+  private idleHtml(): string {
+    return getIdleHtml(
+      this.storyEntryCount,
+      this.promptCount,
+      this.promptThreshold,
+      this.lastConcept
+    );
+  }
 }

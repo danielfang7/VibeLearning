@@ -15,6 +15,7 @@ let storyStore: CodebaseStoryStore | undefined;
 let sessionGapTimer: NodeJS.Timeout | undefined;
 let currentIntervention: Intervention | undefined;
 let isGenerating = false; // concurrency guard — prevents overlapping API calls
+let statusBarItem: vscode.StatusBarItem | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   store = new KnowledgeStateStore(context.globalStorageUri.fsPath);
@@ -23,6 +24,14 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VibeLearnPanel.viewType, panel)
   );
+
+  // Status bar item — shows prompt count and provides quick access
+  statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBarItem.command = 'vibelearn.quizNow';
+  statusBarItem.tooltip = 'VibeLearn — click to quiz yourself now';
+  statusBarItem.text = '$(zap) 0/10';
+  statusBarItem.show();
+  context.subscriptions.push(statusBarItem);
 
   const quizNow = () => {
     if (!adapter) {
@@ -79,7 +88,10 @@ export function activate(context: vscode.ExtensionContext): void {
         ? `The correct answer was: ${currentIntervention.answer}`
         : currentIntervention.body;
 
-    panel.showFeedback(isCorrect, explanation);
+    panel.showFeedback(isCorrect, explanation, currentIntervention.conceptTags);
+
+    // Update last concept in idle view
+    updatePanelLastConcept(panel, store!);
   });
   panel.onRate((stars, conceptTags) => {
     store!.recordRating(stars, conceptTags);
@@ -96,6 +108,7 @@ export function activate(context: vscode.ExtensionContext): void {
   adapter = new ClaudeCodeAdapter(workspacePath);
   storyStore = new CodebaseStoryStore(workspacePath);
   panel.setStoryEntryCount(storyStore.getAllEntries().length);
+  updatePanelLastConcept(panel, store);
 
   setupTriggerLoop(adapter, panel, store, storyStore, context);
 
@@ -112,6 +125,7 @@ export function activate(context: vscode.ExtensionContext): void {
 export function deactivate(): void {
   adapter?.dispose();
   store?.dispose();
+  statusBarItem?.dispose();
   clearTimeout(sessionGapTimer);
   logger.dispose();
 }
@@ -129,12 +143,26 @@ function setupTriggerLoop(
 
   adapter.onPromptSubmitted((_prompt) => {
     resetSessionGapTimer(adapter, panel, store, storyStore);
-    if (adapter.getPromptCount() % promptThreshold === 0) {
+    const count = adapter.getPromptCount();
+    updateStatusBar(count, promptThreshold);
+    panel.setPromptCount(count, promptThreshold);
+    if (count % promptThreshold === 0) {
       triggerIntervention('prompt_count', adapter, panel, store, storyStore);
     }
   });
 
+  // Set initial counts
+  const initialCount = adapter.getPromptCount();
+  updateStatusBar(initialCount, promptThreshold);
+  panel.setPromptCount(initialCount, promptThreshold);
+
   resetSessionGapTimer(adapter, panel, store, storyStore);
+}
+
+function updateStatusBar(count: number, threshold: number): void {
+  if (statusBarItem) {
+    statusBarItem.text = `$(zap) ${count % threshold || (count > 0 ? threshold : 0)}/${threshold}`;
+  }
 }
 
 function resetSessionGapTimer(
@@ -256,9 +284,15 @@ async function triggerIntervention(
     logger.log(`triggerIntervention(${reason}): completed — type=${intervention.type}`);
   } catch (err) {
     logger.error(`triggerIntervention(${reason}): generation failed`, err);
-    vscode.window.showWarningMessage(
-      'VibeLearn: Could not generate an intervention. Check your API key and connection.'
-    );
+    const errMsg = err instanceof Error ? err.message : String(err);
+    const friendly = errMsg.includes('401') || errMsg.includes('invalid')
+      ? 'API key invalid or expired. Check your settings.'
+      : errMsg.includes('429') || errMsg.includes('rate')
+        ? 'Rate limit reached. Try again in a moment.'
+        : 'Check your API key and internet connection.';
+    panel.showError(friendly, () => {
+      triggerIntervention(reason, adapter, panel, store, storyStore);
+    });
   } finally {
     isGenerating = false;
   }
@@ -295,9 +329,9 @@ async function runExplainCodebase(
     logger.log('explainCodebase: completed');
   } catch (err) {
     logger.error('explainCodebase: failed', err);
-    vscode.window.showWarningMessage(
-      'VibeLearn: Could not analyze the codebase. Check your API key and connection.'
-    );
+    panel.showError('Could not analyze the codebase. Check your API key and connection.', () => {
+      runExplainCodebase(adapter, panel, store);
+    });
   } finally {
     isGenerating = false;
   }
@@ -353,4 +387,12 @@ function offerGitignoreUpdate(workspacePath: string | undefined): void {
 
 function getSetting<T>(key: string, defaultValue: T): T {
   return vscode.workspace.getConfiguration('vibelearn').get<T>(key, defaultValue);
+}
+
+function updatePanelLastConcept(panel: VibeLearnPanel, store: KnowledgeStateStore): void {
+  const concepts = store.getState().concepts;
+  const entries = Object.entries(concepts);
+  if (entries.length === 0) return;
+  const [tag, record] = entries.sort((a, b) => b[1].lastSeen.localeCompare(a[1].lastSeen))[0];
+  panel.setLastConcept(tag, record.lastSeen, record.avgScore);
 }

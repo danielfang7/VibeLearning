@@ -1,11 +1,17 @@
-import { html, escHtml } from './shared';
+import { html, escHtml, renderChips } from './shared';
 
-export function getFeedbackHtml(wasCorrect: boolean, explanation: string): string {
+export function getFeedbackHtml(
+  wasCorrect: boolean,
+  explanation: string,
+  conceptTags: string[] = []
+): string {
+  const headline = wasCorrect ? 'Correct.' : 'Not quite.';
   return html(`
     <div class="feedback ${wasCorrect ? 'correct' : 'incorrect'}">
-      <h2>${wasCorrect ? 'Nice work.' : 'Not quite.'}</h2>
+      <h2>${headline}</h2>
+      ${renderChips(conceptTags)}
       <p>${escHtml(explanation)}</p>
-      <button onclick="postMsg('skip')">Continue coding</button>
+      <button onclick="postMsg('skip')">Back to coding</button>
     </div>
     <script>
       const vscode = acquireVsCodeApi();

@@ -67,3 +67,35 @@ Deferred work from planning sessions. Each item has context for future pickup.
 **Context:** Log structure: `{ timestamp, interventionType, triggerReason, answered: bool, skipped: bool, score: number|null, apiLatencyMs: number, approxTokens: number }`. Append to a JSONL file in `context.globalStoragePath`. A companion `npm run dev:analytics` script could summarize the log. Integrate into `extension.ts` in `triggerIntervention()` and `onAnswer()` / `skip` message handler.
 
 **Effort:** S (human ~2hrs / CC ~15min) | **Priority:** P2 | **Depends on:** Nothing — can ship standalone
+
+---
+
+## P2: Idle View — "No concepts yet" placeholder
+
+**What:** When the idle view renders the "Last reinforced" concept card but no concepts have been recorded yet (fresh install, no answered quizzes), show a motivating placeholder instead of an empty space.
+
+**Why:** First-time users open the panel, answer zero quizzes, and see a blank slot. A hint like "Answer your first quiz to start tracking concepts" turns an empty state into a CTA.
+
+**Pros:** Removes the cold-start blank state. Reinforces the product's value prop on first open.
+
+**Cons:** Minor — the absence of the widget is already handled (widget only renders if `lastConcept` is set), so no bug. This is purely a polish improvement.
+
+**Context:** In `src/ui/views/idle.ts`, `lastConceptHtml` is `''` when `lastConcept` is undefined. Add a fallback div: `<div class="last-concept"><p class="hint">Answer your first quiz to start tracking concepts.</p></div>`.
+
+**Effort:** XS (human ~15min / CC ~5min) | **Priority:** P2 | **Depends on:** Nothing
+
+---
+
+## P3: DESIGN.md — Extension design system documentation
+
+**What:** Create a `DESIGN.md` that documents the design decisions for VibeLearn as a living reference: token system (`shared.ts` CSS vars), icon rationale, status bar format, command naming conventions, copywriting voice.
+
+**Why:** As the product grows (more views, potential contributor), the design decisions in `shared.ts` become invisible tribal knowledge. DESIGN.md makes them explicit and debatable.
+
+**Pros:** Enables consistent design across future views. Useful for onboarding contributors. Makes `/plan-design-review` calibrate against documented decisions.
+
+**Cons:** Maintenance overhead if design evolves quickly. Premature for a solo-authored extension.
+
+**Context:** The de-facto design system already exists in `src/ui/views/shared.ts`. DESIGN.md would be a prose explanation of the choices made there: VS Code token usage, 2px border-radius convention, `--vscode-charts-green/red` for feedback colors, `$(zap)` codicon for status bar, `Cmd+Shift+L` keybinding rationale.
+
+**Effort:** XS (human ~1hr / CC ~20min) | **Priority:** P3 | **Depends on:** Nothing
