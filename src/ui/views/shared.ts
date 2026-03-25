@@ -158,6 +158,16 @@ export function html(body: string): string {
   /* aria-live region */
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden;
              clip: rect(0,0,0,0); white-space: nowrap; }
+  /* Feedback question recap */
+  .feedback-question { margin-bottom: 16px; padding: 10px 12px;
+                       background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+                       border-radius: 3px; opacity: 0.8; }
+  .feedback-question-label { margin: 0 0 4px; }
+  .feedback-question-title { font-size: 0.875rem; font-weight: 600; margin: 0 0 4px; }
+  .feedback-question-body  { font-size: 0.8rem; color: var(--vscode-descriptionForeground);
+                              margin: 0; line-height: 1.5; }
+  .feedback-question-body pre { font-size: 0.75rem; margin: 6px 0 0; }
+  .feedback-answer h2 { margin-top: 0; }
 </style>
 </head>
 <body>${body}</body>

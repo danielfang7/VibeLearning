@@ -59,14 +59,19 @@ export function getIdleHtml(
         <div class="hint">${escHtml(promptLabel)}</div>
       </div>
       ${lastConceptHtml}
-      <button onclick="postMsg('quizNow')" style="width: 100%;">Quiz Me Now</button>
-      <button class="secondary" onclick="postMsg('explainCodebase')" style="width: 100%; margin-top: 4px;">Explain My Codebase</button>
+      <button id="btn-quiz" onclick="triggerAction(this, 'quizNow', 'Generating quiz\u2026')" style="width: 100%;">Quiz Me Now</button>
+      <button id="btn-explain" class="secondary" onclick="triggerAction(this, 'explainCodebase', 'Analyzing codebase\u2026')" style="width: 100%; margin-top: 4px;">Explain My Codebase</button>
       ${storyHint}
       <p class="hint" style="margin-top: 20px;">You're in flow. VibeLearn will check in soon.</p>
     </div>
     <script>
       const vscode = acquireVsCodeApi();
       function postMsg(type, payload) { vscode.postMessage({ type, payload }); }
+      function triggerAction(btn, type, loadingText) {
+        document.querySelectorAll('button').forEach(function(b) { b.disabled = true; });
+        btn.textContent = loadingText;
+        postMsg(type);
+      }
     </script>
   `);
 }

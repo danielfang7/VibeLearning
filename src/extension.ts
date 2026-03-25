@@ -99,7 +99,10 @@ export function activate(context: vscode.ExtensionContext): void {
           : `The correct answer was: ${currentIntervention.answer}`
         : currentIntervention.body;
 
-    panel.showFeedback(isCorrect, explanation, currentIntervention.conceptTags);
+    panel.showFeedback(isCorrect, explanation, currentIntervention.conceptTags, {
+      title: currentIntervention.title,
+      body: currentIntervention.body,
+    });
 
     // Update last concept in idle view
     updatePanelLastConcept(panel, store!);
@@ -230,6 +233,9 @@ async function triggerIntervention(
     return;
   }
 
+  isGenerating = true;
+  panel.showLoading('Generating quiz…');
+
   const [context, knowledgeState] = await Promise.all([
     adapter.getSessionContext(reason),
     Promise.resolve(store.getState()),
@@ -238,10 +244,11 @@ async function triggerIntervention(
   const hasContext = context.diffs.length > 0 || context.prompts.length > 0;
   if (!hasContext && reason !== 'manual') {
     logger.log(`triggerIntervention(${reason}): skipped — no session activity yet`);
+    isGenerating = false;
+    panel.showIdle();
     return;
   }
 
-  isGenerating = true;
   logger.log(`triggerIntervention(${reason}): starting generation`);
   const triggerStart = Date.now();
 

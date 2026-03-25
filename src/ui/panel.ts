@@ -6,7 +6,7 @@ import { getDebriefHtml } from './views/debrief';
 import { getRatingHtml } from './views/rating';
 import { getStoryHtml } from './views/story';
 import { getExplainHtml } from './views/explain';
-import { getFeedbackHtml } from './views/feedback';
+import { getFeedbackHtml, type FeedbackQuestion } from './views/feedback';
 import { getLoadingHtml, getSetupHtml, getErrorHtml } from './views/shared';
 
 // Pending debrief/explain queued while the panel was not visible.
@@ -169,9 +169,9 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
     this.view.show(true);
   }
 
-  showFeedback(wasCorrect: boolean, explanation: string, conceptTags: string[] = []): void {
+  showFeedback(wasCorrect: boolean, explanation: string, conceptTags: string[] = [], question?: FeedbackQuestion): void {
     if (!this.view) return;
-    this.view.webview.html = getFeedbackHtml(wasCorrect, explanation, conceptTags);
+    this.view.webview.html = getFeedbackHtml(wasCorrect, explanation, conceptTags, question);
   }
 
   showLoading(message: string): void {
