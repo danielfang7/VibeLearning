@@ -25,18 +25,29 @@ export class KnowledgeStateStore {
     if (existing) {
       const newSeenCount = existing.seenCount + 1;
       const newAvgScore = (existing.avgScore * existing.seenCount + score) / newSeenCount;
+      const { ef, interval, nextReview } = this.sm2(
+        score,
+        existing.easinessFactor ?? 2.5,
+        existing.interval ?? 1,
+        newSeenCount
+      );
       this.state.concepts[conceptId] = {
         seenCount: newSeenCount,
         lastSeen: today,
         avgScore: newAvgScore,
-        nextReview: this.calcNextReview(newSeenCount, score),
+        nextReview,
+        easinessFactor: ef,
+        interval,
       };
     } else {
+      const { ef, interval, nextReview } = this.sm2(score, 2.5, 1, 1);
       this.state.concepts[conceptId] = {
         seenCount: 1,
         lastSeen: today,
         avgScore: score,
-        nextReview: this.calcNextReview(1, score),
+        nextReview,
+        easinessFactor: ef,
+        interval,
       };
     }
 
@@ -75,11 +86,33 @@ export class KnowledgeStateStore {
     fs.writeFileSync(this.filePath, JSON.stringify(this.state, null, 2), 'utf-8');
   }
 
-  // score < 0.5 → review tomorrow; score >= 0.5 → interval doubles with each repetition
-  private calcNextReview(seenCount: number, score: number): string {
-    const intervalDays = score >= 0.5 ? Math.pow(2, seenCount - 1) : 1;
+  // SM-2 spaced repetition algorithm.
+  // score (0–1) is mapped to quality q (0–5): q = round(score * 5)
+  // q < 3 → failed, interval resets to 1 day
+  // q >= 3 → interval grows: 1 → 6 → round(prev * EF) on subsequent reviews
+  // EF (easiness factor) adjusts per answer quality, clamped to min 1.3
+  private sm2(
+    score: number,
+    prevEF: number,
+    prevInterval: number,
+    seenCount: number
+  ): { ef: number; interval: number; nextReview: string } {
+    const q = Math.round(score * 5); // 0–5
+    const ef = Math.max(1.3, prevEF + 0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+
+    let interval: number;
+    if (q < 3) {
+      interval = 1;
+    } else if (seenCount <= 1) {
+      interval = 1;
+    } else if (seenCount === 2) {
+      interval = 6;
+    } else {
+      interval = Math.round(prevInterval * ef);
+    }
+
     const next = new Date();
-    next.setDate(next.getDate() + intervalDays);
-    return next.toISOString().split('T')[0];
+    next.setDate(next.getDate() + interval);
+    return { ef, interval, nextReview: next.toISOString().split('T')[0] };
   }
 }

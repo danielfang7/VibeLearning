@@ -38,9 +38,11 @@ export interface Intervention {
 
 export interface ConceptRecord {
   seenCount: number;
-  lastSeen: string;     // ISO date string
-  avgScore: number;     // 0–1
-  nextReview: string;   // ISO date string
+  lastSeen: string;        // ISO date string
+  avgScore: number;        // 0–1
+  nextReview: string;      // ISO date string
+  easinessFactor?: number; // SM-2: starts at 2.5, min 1.3; absent in legacy records
+  interval?: number;       // SM-2: days until next review; absent in legacy records
 }
 
 export interface DebriefRating {
