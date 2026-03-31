@@ -17,6 +17,22 @@ VibeLearn is the friction between "AI built it" and "I understand it."
 ## How it works
 
 ```
+You save a file  ──►  VibeLearn detects architectural pattern
+                            │  (git diff HEAD, >= 10 gross lines)
+                            ▼
+                   Claude classifies the pattern
+                   (observer, DI, factory…) at >= 0.8 confidence
+                            │
+                            ▼
+                   "Do you own this decision?"
+                   appears in sidebar  ──►  You explain it (< 60s)
+                            │
+                            ▼
+                   Second Claude call evaluates your answer
+                   Result → spaced repetition (at 0.5x weight)
+```
+
+```
 You make 10 AI prompts  ──►  VibeLearn collects context
                                   │  (recent prompts + git diffs)
                                   ▼
@@ -32,9 +48,10 @@ You make 10 AI prompts  ──►  VibeLearn collects context
                          adapts future questions
 ```
 
-**Triggers** (both configurable):
-- Every **10 AI prompts** — catches concepts while context is fresh
-- After a **10-minute coding gap** — catches the end of a session
+**Triggers** (all configurable):
+- **File save** — architecture_check: detects pattern-level decisions in your diffs
+- Every **10 AI prompts** — quiz on the concepts you just worked with
+- After a **10-minute coding gap** — session debrief (what you built + why)
 
 **One Claude API call per trigger.** No background polling, no constant monitoring.
 
@@ -42,16 +59,18 @@ You make 10 AI prompts  ──►  VibeLearn collects context
 
 ## Intervention types
 
-| Type | What it does | Example |
-|------|-------------|---------|
-| **Concept Check** | Multiple-choice quiz on a pattern you just used | *"You used `Promise.all` — which of these best describes what happens if one promise rejects?"* |
-| **Explain It Back** | Free-text: explain what a function does in one sentence | *"In plain English, what does your `debounce` function actually do?"* |
-| **Micro-Reading** | 2–3 sentence explanation + docs link for an advanced concept | *"You used `infer` in a conditional type. Here's what it actually means…"* |
-| **Spot the Bug** | Mutated version of your code — find the bug | *(Phase 2)* |
-| **Refactor Challenge** | "How would you rewrite this without the AI?" | *(Phase 2)* |
-| **Analogy Prompt** | "This pattern is like ___ because ___" | *(Phase 2)* |
+| Type | Trigger | What it does | Example |
+|------|---------|-------------|---------|
+| **Architecture Check** | File save | Detects when Claude made a design pattern decision — asks if you own it | *"Claude introduced the Observer pattern here. Explain the tradeoff in your own words."* |
+| **Concept Check** | 10 prompts | Multiple-choice quiz on a pattern you just used | *"You used `Promise.all` — which of these best describes what happens if one promise rejects?"* |
+| **Explain It Back** | 10 prompts | Free-text: explain what a function does in one sentence | *"In plain English, what does your `debounce` function actually do?"* |
+| **Micro-Reading** | 10 prompts | 2–3 sentence explanation + docs link for an advanced concept | *"You used `infer` in a conditional type. Here's what it actually means…"* |
+| **Session Debrief** | 10-min gap | Architectural narrative of what you built this session | *(generated from git history + recent prompts)* |
+| **Spot the Bug** | 10 prompts | Mutated version of your code — find the bug | *(Phase 2)* |
+| **Refactor Challenge** | 10 prompts | "How would you rewrite this without the AI?" | *(Phase 2)* |
+| **Analogy Prompt** | 10 prompts | "This pattern is like ___ because ___" | *(Phase 2)* |
 
-Interventions adapt over time. Concepts you've answered correctly get spaced further apart. Concepts you've struggled with resurface sooner.
+Interventions adapt over time using SM-2 spaced repetition. Concepts you've answered correctly get spaced further apart. Concepts you've struggled with resurface sooner. Architecture Check scores are weighted at 0.5x to avoid over-inflating confidence on architectural patterns.
 
 ---
 
