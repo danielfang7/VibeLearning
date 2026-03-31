@@ -85,10 +85,7 @@
           "default": [
             "concept_check",
             "explain_it_back",
-            "micro_reading",
-            "spot_the_bug",
-            "refactor_challenge",
-            "analogy_prompt"
+            "micro_reading"
           ],
           "description": "Which quiz types VibeLearn can generate. Remove a type to disable it."
         },
