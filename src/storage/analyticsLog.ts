@@ -7,6 +7,7 @@ export interface AnalyticsEvent {
   triggerReason: string;
   answered: boolean;
   skipped: boolean;
+  attempted?: boolean;  // architecture_check: user engaged but did not submit
   score: number | null;
   apiLatencyMs: number;
   approxTokens: number;

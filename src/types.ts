@@ -3,13 +3,23 @@
 export type TriggerReason = 'prompt_count' | 'session_gap' | 'manual';
 
 export type InterventionType =
-  | 'concept_check'     // MCQ or predict-output
-  | 'explain_it_back'   // "In one sentence, what does this function do?"
-  | 'spot_the_bug'      // Mutated version of their code
-  | 'micro_reading'     // 2–3 sentence explanation + docs link
-  | 'refactor_challenge'// "How would you rewrite this without the AI?"
-  | 'analogy_prompt'    // "This design pattern is like ___ because ___"
-  | 'session_narrative';// Post-session architectural debrief or on-demand explain
+  | 'concept_check'      // MCQ or predict-output
+  | 'explain_it_back'    // "In one sentence, what does this function do?"
+  | 'spot_the_bug'       // Mutated version of their code
+  | 'micro_reading'      // 2–3 sentence explanation + docs link
+  | 'refactor_challenge' // "How would you rewrite this without the AI?"
+  | 'analogy_prompt'     // "This design pattern is like ___ because ___"
+  | 'session_narrative'  // Post-session architectural debrief or on-demand explain
+  | 'architecture_check';// Mid-session: AI made an architectural decision — do you own it?
+
+/** A design pattern decision detected in a diff. */
+export interface ArchitecturalDecision {
+  patternType: string;    // e.g. "observer", "dependency-injection"
+  decisionName: string;   // human-readable: "Pub/Sub event bus via EventEmitter"
+  tradeoffs: string;      // why this was chosen + when you'd choose differently (canonical source)
+  counterfactual: string; // the alternative path and why it wasn't chosen
+  confidence: number;     // 0–1; only surface if >= 0.8
+}
 
 export interface FileDiff {
   path: string;
@@ -30,10 +40,11 @@ export interface Intervention {
   type: InterventionType;
   title: string;
   body: string;
-  options?: string[];   // For MCQ / concept_check
-  answer?: string;      // For MCQ / spot_the_bug
+  options?: string[];      // For MCQ / concept_check
+  answer?: string;         // For MCQ / spot_the_bug
   conceptTags: string[];
   difficultyScore: number; // 1–5
+  archDecision?: ArchitecturalDecision; // Populated for architecture_check only
 }
 
 export interface ConceptRecord {
@@ -75,4 +86,6 @@ export interface SessionAdapter {
   markQuizTriggered?(): void;
   /** Optional: return a list of tracked files for codebase explain. */
   getFileStructure?(): string[];
+  /** Optional: return only uncommitted diffs (no HEAD~5 fallback). Used by arch detector. */
+  getUncommittedDiffs?(): FileDiff[];
 }
