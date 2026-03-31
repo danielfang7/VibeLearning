@@ -82,11 +82,25 @@ export function activate(context: vscode.ExtensionContext): void {
       isGenerating = true;
       panel.showLoading('Evaluating your explanation…');
 
-      const engine = new InterventionEngine(apiKey);
+      let engine: InterventionEngine;
+      try {
+        engine = new InterventionEngine(apiKey);
+      } catch (err) {
+        logger.error('InterventionEngine constructor failed', err);
+        isGenerating = false;
+        panel.showFeedback(true, intervention.body, intervention.conceptTags, {
+          title: intervention.title,
+          body: intervention.body,
+        });
+        return;
+      }
+
       engine.evaluateExplanation(intervention.archDecision!, answer).then(({ score, feedback }) => {
         // Write at 0.5x weight so arch decisions don't over-inflate SM-2 confidence
-        for (const tag of intervention.conceptTags) {
-          store!.recordResult(tag, score * 0.5);
+        if (store) {
+          for (const tag of intervention.conceptTags) {
+            store.recordResult(tag, score * 0.5);
+          }
         }
 
         if (pendingEvent) {
@@ -99,31 +113,36 @@ export function activate(context: vscode.ExtensionContext): void {
           body: intervention.body,
         });
 
-        updatePanelLastConcept(panel, store!);
-
-        // Surface any queued detection
-        if (pendingArchDecision) {
-          const queued = pendingArchDecision;
-          pendingArchDecision = undefined;
-          const queuedIntervention: Intervention = {
-            type: 'architecture_check',
-            title: queued.decisionName,
-            body: `${queued.tradeoffs}\n\n**The road not taken:** ${queued.counterfactual}`,
-            conceptTags: [queued.patternType],
-            difficultyScore: 3,
-            archDecision: queued,
-          };
-          currentIntervention = queuedIntervention;
-          panel.showIntervention(queuedIntervention);
-        }
+        if (store) updatePanelLastConcept(panel, store);
+        currentIntervention = undefined;
       }).catch((err) => {
         logger.error('evaluateExplanation failed', err);
+        pendingArchDecision = undefined; // drop stale queue — context has changed
         panel.showFeedback(true, intervention.body, intervention.conceptTags, {
           title: intervention.title,
           body: intervention.body,
         });
+        currentIntervention = undefined;
       }).finally(() => {
         isGenerating = false;
+        // Surface queued detection after isGenerating clears (deferred to avoid race)
+        if (pendingArchDecision) {
+          setTimeout(() => {
+            if (!pendingArchDecision) return;
+            const queued = pendingArchDecision;
+            pendingArchDecision = undefined;
+            const queuedIntervention: Intervention = {
+              type: 'architecture_check',
+              title: queued.decisionName,
+              body: `${queued.tradeoffs}\n\n**The road not taken:** ${queued.counterfactual}`,
+              conceptTags: [queued.patternType],
+              difficultyScore: 3,
+              archDecision: queued,
+            };
+            currentIntervention = queuedIntervention;
+            panel.showIntervention(queuedIntervention);
+          }, 0);
+        }
       });
       return;
     }
@@ -180,7 +199,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     // Surface any queued architectural detection after the current one is dismissed
-    if (pendingArchDecision) {
+    // Guard: don't interrupt an in-flight generation
+    if (pendingArchDecision && !isGenerating) {
       const queued = pendingArchDecision;
       pendingArchDecision = undefined;
       const queuedIntervention: Intervention = {
@@ -246,7 +266,11 @@ function setupTriggerLoop(
   });
 
   // File watcher for architectural decision detection (5s debounce)
-  const fsWatcher = vscode.workspace.createFileSystemWatcher('**/*');
+  // Exclude node_modules, .git, dist, build — these produce high-volume noise
+  const fsWatcher = vscode.workspace.createFileSystemWatcher(
+    '**/*.{ts,tsx,js,jsx,py,go,rs,java,cs,rb,cpp,c,swift,kt}',
+    false, false, true // ignoreCreate=false, ignoreChange=false, ignoreDelete=true
+  );
   const scheduleArchDetection = () => {
     clearTimeout(archDebounceTimer);
     archDebounceTimer = setTimeout(() => {
@@ -506,7 +530,7 @@ async function runArchDetection(
         pendingEvent = {
           timestamp: new Date().toISOString(),
           interventionType: 'architecture_check',
-          triggerReason: 'prompt_count', // closest available reason
+          triggerReason: 'file_change',
           answered: false,
           skipped: false,
           score: null,

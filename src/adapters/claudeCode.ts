@@ -203,6 +203,7 @@ export class ClaudeCodeAdapter implements SessionAdapter {
         cwd: this.workspacePath,
         encoding: 'utf-8',
         stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000, // 10s — prevents blocking extension host on slow git
       });
       if (!raw.trim()) return [];
       return parseDiffs(raw, DIFF_CHAR_LIMIT).filter(

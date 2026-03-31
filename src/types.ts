@@ -1,6 +1,6 @@
 // Core types for VibeLearn — derived from PRD §8, §9, §10, §11
 
-export type TriggerReason = 'prompt_count' | 'session_gap' | 'manual';
+export type TriggerReason = 'prompt_count' | 'session_gap' | 'manual' | 'file_change';
 
 export type InterventionType =
   | 'concept_check'      // MCQ or predict-output
