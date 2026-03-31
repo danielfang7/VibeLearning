@@ -2,6 +2,11 @@
 
 All notable changes to VibeLearn are documented here.
 
+## [0.1.0.1] - 2026-03-31
+
+### Changed
+- Removed `spot_the_bug`, `refactor_challenge`, and `analogy_prompt` from the default enabled intervention types. The default set is now `concept_check`, `explain_it_back`, and `micro_reading`. All types remain available in the enum and can be re-enabled via settings.
+
 ## [0.1.0.0] - 2026-03-31
 
 ### Added
