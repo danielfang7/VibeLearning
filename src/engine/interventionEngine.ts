@@ -1,5 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
-import type { CodebaseStoryEntry, Intervention, InterventionType, KnowledgeState, SessionContext } from '../types';
+import type { ArchitecturalDecision, CodebaseStoryEntry, FileDiff, Intervention, InterventionType, KnowledgeState, SessionContext } from '../types';
 
 // One module, one API call per trigger.
 // Three generation modes:
@@ -70,6 +70,72 @@ export class InterventionEngine {
     const prompt = buildExplainPrompt(context, fileStructure);
     const text = await this.callClaude(prompt);
     return parseIntervention(text, 'session_narrative');
+  }
+
+  /**
+   * Pre-pass detector: given a single file diff, returns an ArchitecturalDecision
+   * if the diff contains a pattern-level design choice (DI, observer, factory, etc.)
+   * with confidence >= 0.8. Returns null otherwise.
+   */
+  async detectArchitecturalDecision(diff: FileDiff): Promise<ArchitecturalDecision | null> {
+    const prompt = buildDetectPrompt(diff);
+    let text: string;
+    try {
+      text = await this.callClaude(prompt);
+    } catch {
+      return null;
+    }
+
+    if (!text.trim()) return null;
+
+    const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    try {
+      const parsed = JSON.parse(cleaned) as Partial<ArchitecturalDecision & { confidence: number }>;
+      const confidence = typeof parsed.confidence === 'number' ? parsed.confidence : 0;
+      if (confidence < 0.8) return null;
+      if (!parsed.patternType || !parsed.decisionName || !parsed.tradeoffs || !parsed.counterfactual) return null;
+      return {
+        patternType: parsed.patternType,
+        decisionName: parsed.decisionName,
+        tradeoffs: parsed.tradeoffs,
+        counterfactual: parsed.counterfactual,
+        confidence,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Evaluates a developer's free-text explanation of an architectural decision.
+   * Returns a score (0–1) and feedback string.
+   * Score is from an LLM-as-judge — weight at 0.5x when writing to knowledgeState.
+   */
+  async evaluateExplanation(
+    decision: ArchitecturalDecision,
+    userAnswer: string
+  ): Promise<{ score: number; feedback: string }> {
+    const prompt = buildEvaluatePrompt(decision, userAnswer);
+    let text: string;
+    try {
+      text = await this.callClaude(prompt);
+    } catch {
+      return { score: 0.5, feedback: `Here's what to know: ${decision.tradeoffs}` };
+    }
+
+    if (!text.trim()) return { score: 0.5, feedback: `Here's what to know: ${decision.tradeoffs}` };
+
+    const cleaned = text.replace(/^```(?:json)?\n?/m, '').replace(/\n?```$/m, '').trim();
+    try {
+      const parsed = JSON.parse(cleaned) as { score?: number; feedback?: string };
+      const score = typeof parsed.score === 'number' ? Math.min(1, Math.max(0, parsed.score)) : 0.5;
+      const feedback = typeof parsed.feedback === 'string' && parsed.feedback.trim()
+        ? parsed.feedback
+        : `Here's what to know: ${decision.tradeoffs}`;
+      return { score, feedback };
+    } catch {
+      return { score: 0.5, feedback: `Here's what to know: ${decision.tradeoffs}` };
+    }
   }
 
   private async callClaude(prompt: string): Promise<string> {
@@ -268,7 +334,7 @@ Return ONLY a valid JSON object (no markdown, no explanation):
 }
 
 The body must use exactly this format (use \\n for newlines):
-**Purpose:** one sentence about what this codebase does\\n\\n**Major Components:**\\n- Component: what it does\\n- Component: what it does\\n\\n**Data Flow:** how data moves through the system (1–2 sentences)\\n\\n**Key Patterns:** design patterns or architectural decisions (1–2 sentences)\\n\\n**Open Questions:** 1–2 things that might need attention`;
+**5 Defining Design Decisions:**\\n\\n1. **Decision name** — what pattern/choice was made and why it was the right call for this system\\n2. **Decision name** — what pattern/choice was made and why\\n3. **Decision name** — what pattern/choice was made and why\\n4. **Decision name** — what pattern/choice was made and why\\n5. **Decision name** — what pattern/choice was made and why\\n\\n**Road Not Taken:** For the most important decision above, what was the alternative approach, and why wasn't it chosen?\\n\\n**One Thing To Watch:** a design tension or tradeoff that may need revisiting as the system grows`;
 }
 
 // ── Shared utilities ─────────────────────────────────────────────────────────
@@ -321,5 +387,95 @@ function parseIntervention(text: string, defaultType: InterventionType): Interve
   }
 }
 
+// ── Architectural decision detector ──────────────────────────────────────────
+
+function buildDetectPrompt(diff: FileDiff): string {
+  const diffContent = diff.diff.slice(0, DIFF_CHAR_LIMIT);
+
+  return `You are an expert software architect reviewing a code diff. Determine whether this diff contains a significant architectural or design pattern decision.
+
+A significant decision is a deliberate choice of a design pattern, structural abstraction, or architectural approach — not a variable rename, comment, or minor refactor.
+
+Initial pattern set to look for: dependency-injection, observer/event-bus, factory, strategy, repository, facade, adapter, decorator, pub-sub, command, singleton.
+
+TRUE POSITIVE examples (these ARE architectural decisions):
+1. "Introduces EventEmitter to broadcast state changes to multiple listeners instead of calling them directly" → observer/event-bus
+2. "Passes database client as constructor parameter instead of instantiating it inside the class" → dependency-injection
+3. "Uses a factory function to create different parser types based on file extension" → factory
+4. "Defines a common interface and switches between multiple strategy implementations at runtime" → strategy
+5. "Creates a repository class that wraps all database queries behind domain-facing methods" → repository
+
+FALSE POSITIVE examples (these are NOT architectural decisions):
+1. "Renames variable x to userId for clarity" — NOT a pattern decision
+2. "Adds a JSDoc comment block explaining an existing function" — NOT a pattern decision
+3. "Fixes a typo in an error message string" — NOT a pattern decision
+
+Diff to analyze:
+[${diff.path}]:
+${diffContent}
+
+Return ONLY a valid JSON object (no markdown, no explanation):
+{
+  "patternType": "<pattern name, e.g. observer, dependency-injection, factory>",
+  "decisionName": "<human-readable: e.g. Pub/Sub event bus via EventEmitter>",
+  "tradeoffs": "<why this pattern was chosen for this context + when you'd choose differently>",
+  "counterfactual": "<the alternative approach that wasn't chosen, and why>",
+  "confidence": <0.0–1.0>
+}
+
+If no significant architectural decision is present, return:
+{"confidence": 0.0, "patternType": "", "decisionName": "", "tradeoffs": "", "counterfactual": ""}
+
+Rules:
+- confidence >= 0.8 only for clear, unambiguous pattern-level decisions
+- Be conservative — a false positive that gets dismissed is worse than a missed detection
+- tradeoffs must be specific to this diff, not generic pattern description`;
+}
+
+function buildEvaluatePrompt(decision: ArchitecturalDecision, userAnswer: string): string {
+  return `You are an expert software architect evaluating a developer's understanding of an architectural decision in their codebase.
+
+The architectural decision:
+- Pattern: ${decision.patternType}
+- Decision: ${decision.decisionName}
+- Expected understanding (tradeoffs): ${decision.tradeoffs}
+- Road not taken (counterfactual): ${decision.counterfactual}
+
+The developer's explanation:
+"${userAnswer}"
+
+Evaluate how well the developer's explanation captures:
+1. Why this pattern was chosen over alternatives
+2. The trade-offs involved
+3. When a different approach would be better
+
+Return ONLY a valid JSON object (no markdown, no explanation):
+{
+  "score": <0.0–1.0>,
+  "feedback": "<2–3 sentences: acknowledge what they got right, correct/expand what they missed, end with one concrete insight>"
+}
+
+Scoring guide:
+- 0.8–1.0: Captures the core tradeoff and shows genuine architectural judgment
+- 0.5–0.79: Shows understanding but misses key nuances
+- 0.2–0.49: Identifies the pattern but doesn't explain the tradeoff reasoning
+- 0.0–0.19: Doesn't demonstrate understanding of why this choice was made
+
+Be encouraging but honest. The goal is learning, not validation.`;
+}
+
+// ── Shared utilities ─────────────────────────────────────────────────────────
+
+/**
+ * Counts gross lines changed in a unified diff (added + deleted lines).
+ * Excludes +++ and --- file header lines.
+ * Used to skip trivial diffs before running the architectural decision detector.
+ */
+export function countGrossLines(diff: string): number {
+  return diff.split('\n').filter(
+    (l) => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---'))
+  ).length;
+}
+
 // Export for testing
-export { buildDiffSummary, parseIntervention, DIFF_CHAR_LIMIT };
+export { buildDiffSummary, parseIntervention, DIFF_CHAR_LIMIT, buildDetectPrompt, buildEvaluatePrompt };
