@@ -191,6 +191,29 @@ export class ClaudeCodeAdapter implements SessionAdapter {
     return prompts.slice(-limit);
   }
 
+  /**
+   * Returns only uncommitted diffs (git diff HEAD).
+   * Used by the architectural decision detector — intentionally skips the HEAD~5
+   * fallback so detection only fires on changes the developer is actively making.
+   */
+  getUncommittedDiffs(): FileDiff[] {
+    const ignorePatterns = this.readIgnorePatterns();
+    try {
+      const raw = execSync('git diff HEAD', {
+        cwd: this.workspacePath,
+        encoding: 'utf-8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+        timeout: 10000, // 10s — prevents blocking extension host on slow git
+      });
+      if (!raw.trim()) return [];
+      return parseDiffs(raw, DIFF_CHAR_LIMIT).filter(
+        (d) => !isIgnored(d.path, ignorePatterns)
+      );
+    } catch {
+      return [];
+    }
+  }
+
   getFileStructure(): string[] {
     try {
       const output = execSync('git ls-files --name-only', {

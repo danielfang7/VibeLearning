@@ -4,6 +4,54 @@ Deferred work from planning sessions. Each item has context for future pickup.
 
 ---
 
+## P2: Architecture Literacy Score
+
+**What:** A 0-100 score visible in the VS Code status bar — "Arch: 73" — showing architecture ownership across this codebase. Derived from: number of architectural decisions detected, engagement rate (not dismissed), average explanation score, and recency of review.
+
+**Why:** Makes the abstract tangible. Motivates return usage. "I went from 41 to 78 this sprint" is the kind of number developers share. Natural community hook.
+
+**Pros:** Status bar integration already exists. Reads from `knowledge.json` concepts records (same data architecture_check writes). Effort is tiny once data exists. High engagement-to-effort ratio.
+
+**Cons:** Score calibration is tricky — needs to feel meaningful, not arbitrary. Requires enough Phase 1/2 data to compute a meaningful number. Cold start: 0-score on fresh install could feel discouraging.
+
+**Context:** Build after Phase 3 has accumulated data. Formula sketch: `(engagementRate * 0.4) + (avgScore * 0.4) + (recencyFactor * 0.2)` where recencyFactor decays if no sessions in 7+ days. Status bar item already registered in `extension.ts` — update it with the score string.
+
+**Effort:** S (human ~3 days / CC ~30min) | **Priority:** P2 | **Depends on:** Phase 3 shipped + data accumulated
+
+---
+
+## P2: Cross-Session Pattern Tracking
+
+**What:** Surface insights from the SM-2 knowledge state: "You've encountered the observer pattern 5 times with 20% engagement. Want to work on this?" Shows which architecture patterns you own vs which keep surprising you.
+
+**Why:** The SM-2 data already sits in `knowledge.json`. This feature makes it visible instead of letting it accumulate silently. Turns passive tracking into active insight delivery. Zero new data infrastructure required.
+
+**Pros:** Near-zero implementation effort. High insight-to-effort ratio. Natural content for the idle view and weekly digest.
+
+**Cons:** Cold start — needs at least 10 architecture_check events to surface meaningful patterns. Could feel noisy if surfaced too eagerly.
+
+**Context:** Query `knowledgeState.concepts` for patterns where `seenCount >= 3` and `avgScore < 0.5` (recurring struggle) or `seenCount >= 5` and `avgScore >= 0.8` (fully owned). Surface in the idle view as a "pattern insight" card. Also include in weekly digest. Start with a simple read of existing data.
+
+**Effort:** XS (human ~1 day / CC ~20min) | **Priority:** P2 | **Depends on:** Phase 1 shipped + ~10 architecture_check events recorded
+
+---
+
+## P2: Framework-Aware Detection
+
+**What:** Extend the implicit decision detector to recognize framework-specific patterns in addition to generic ones. Examples: "You're using React Context — do you know when you'd use Zustand instead?" / "This Prisma relation could produce N+1 queries — do you know why?"
+
+**Why:** Generic patterns (observer, factory) are architecturally correct but can feel abstract. Framework-specific questions are immediately relevant to what the developer is building. Higher perceived value for the most common use cases.
+
+**Pros:** Same detection infrastructure — just extend the prompt with framework-specific few-shot examples. Dramatically increases relevance for React/Next.js/Prisma users.
+
+**Cons:** Framework taxonomy is larger. Need to detect which frameworks are in use first (read `package.json` dependencies). False positive risk is higher for framework-specific patterns.
+
+**Context:** Step 1: read `package.json` at session start, build a framework context string. Step 2: include it in the `detectArchDecision()` prompt alongside generic examples. Initial framework set: React (Context, hooks, server/client components), Next.js (App Router, SSR/SSG), Prisma (relations, N+1), Express (middleware, routing). Expand based on what's most common in user sessions.
+
+**Effort:** S (human ~1 week / CC ~1hr) | **Priority:** P2 | **Depends on:** Phase 1 generic detection proven accurate (dismiss rate < 50%)
+
+---
+
 ## P3: Cursor Adapter
 
 **What:** Implement `CursorAdapter` implementing the `SessionAdapter` interface.

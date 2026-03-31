@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { InterventionEngine, parseIntervention, buildDiffSummary } from './interventionEngine';
+import { InterventionEngine, parseIntervention, buildDiffSummary, countGrossLines, buildDetectPrompt, buildEvaluatePrompt } from './interventionEngine';
 import type { KnowledgeState, SessionContext } from '../types';
 
 // ── Mock Anthropic SDK ────────────────────────────────────────────────────────
@@ -32,6 +32,7 @@ const baseKnowledgeState: KnowledgeState = {
 function mockResponse(text: string) {
   mockCreate.mockResolvedValueOnce({
     content: [{ type: 'text', text }],
+    usage: { input_tokens: 100, output_tokens: 50 },
   });
 }
 
@@ -231,6 +232,125 @@ describe('generateQuiz() with QuizConfig', () => {
     expect(prompt).toContain('- micro_reading:');
     expect(prompt).not.toContain('- spot_the_bug:');
     expect(prompt).not.toContain('- refactor_challenge:');
+  });
+});
+
+describe('countGrossLines()', () => {
+  it('returns 0 for an empty string', () => {
+    expect(countGrossLines('')).toBe(0);
+  });
+
+  it('does not count +++ or --- header lines', () => {
+    const headerOnly = '--- a/foo.ts\n+++ b/foo.ts\n';
+    expect(countGrossLines(headerOnly)).toBe(0);
+  });
+
+  it('counts added and deleted lines', () => {
+    const diff = '+const x = 1;\n-const y = 2;\n context line\n';
+    expect(countGrossLines(diff)).toBe(2);
+  });
+
+  it('counts mixed diff with headers correctly', () => {
+    const diff = '--- a/foo.ts\n+++ b/foo.ts\n+added\n-removed\n+another add\n context\n';
+    expect(countGrossLines(diff)).toBe(3);
+  });
+});
+
+describe('InterventionEngine.detectArchitecturalDecision()', () => {
+  const validDecision = {
+    patternType: 'observer',
+    decisionName: 'Pub/Sub event bus via EventEmitter',
+    tradeoffs: 'Decouples producers from consumers at the cost of harder debugging.',
+    counterfactual: 'Direct function calls — simpler but tightly coupled.',
+    confidence: 0.9,
+  };
+
+  it('returns null when confidence is below 0.8', async () => {
+    mockResponse(JSON.stringify({ ...validDecision, confidence: 0.7 }));
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.detectArchitecturalDecision({ path: 'src/bus.ts', diff: '+emitter.on("change", handler);' });
+    expect(result).toBeNull();
+  });
+
+  it('returns the decision struct when confidence is >= 0.8', async () => {
+    mockResponse(JSON.stringify(validDecision));
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.detectArchitecturalDecision({ path: 'src/bus.ts', diff: '+emitter.on("change", handler);' });
+    expect(result).not.toBeNull();
+    expect(result?.patternType).toBe('observer');
+    expect(result?.confidence).toBe(0.9);
+  });
+
+  it('returns null on malformed JSON response', async () => {
+    mockResponse('not valid json {{{');
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.detectArchitecturalDecision({ path: 'src/foo.ts', diff: '+x' });
+    expect(result).toBeNull();
+  });
+
+  it('returns null on empty response', async () => {
+    mockResponse('');
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.detectArchitecturalDecision({ path: 'src/foo.ts', diff: '+x' });
+    expect(result).toBeNull();
+  });
+
+  it('returned struct includes counterfactual', async () => {
+    mockResponse(JSON.stringify(validDecision));
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.detectArchitecturalDecision({ path: 'src/bus.ts', diff: '+emitter.on("change", handler);' });
+    expect(result?.counterfactual).toBeTruthy();
+  });
+
+  it('prompt includes few-shot true-positive examples', () => {
+    const prompt = buildDetectPrompt({ path: 'src/foo.ts', diff: '+x' });
+    expect(prompt).toMatch(/true[- ]positive|DETECT|patternType/i);
+    // At least one concrete example of a real pattern
+    expect(prompt).toMatch(/observer|singleton|dependency.inject|factory|strategy/i);
+  });
+
+  it('prompt includes false-positive examples', () => {
+    const prompt = buildDetectPrompt({ path: 'src/foo.ts', diff: '+x' });
+    expect(prompt).toMatch(/false[- ]positive|NOT a pattern|no architectural|routine/i);
+  });
+
+  it('prompt instructs model to use confidence threshold', () => {
+    const prompt = buildDetectPrompt({ path: 'src/foo.ts', diff: '+x' });
+    expect(prompt).toMatch(/confidence/i);
+    expect(prompt).toMatch(/0\.8|80%/i);
+  });
+});
+
+describe('InterventionEngine.evaluateExplanation()', () => {
+  const decision = {
+    patternType: 'observer',
+    decisionName: 'Pub/Sub event bus',
+    tradeoffs: 'Decouples producers and consumers.',
+    counterfactual: 'Direct function calls.',
+    confidence: 0.9,
+  };
+
+  it('returns score and feedback from a valid LLM response', async () => {
+    mockResponse(JSON.stringify({ score: 0.8, feedback: 'Good understanding.' }));
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.evaluateExplanation(decision, 'It decouples things.');
+    expect(result.score).toBe(0.8);
+    expect(result.feedback).toBe('Good understanding.');
+  });
+
+  it('returns fallback score 0.5 on malformed JSON', async () => {
+    mockResponse('not json');
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.evaluateExplanation(decision, 'some answer');
+    expect(result.score).toBe(0.5);
+    expect(result.feedback).toBeTruthy();
+  });
+
+  it('returns fallback score 0.5 on empty response', async () => {
+    mockResponse('');
+    const engine = new InterventionEngine('sk-test');
+    const result = await engine.evaluateExplanation(decision, 'some answer');
+    expect(result.score).toBe(0.5);
   });
 });
 

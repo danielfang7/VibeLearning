@@ -2,22 +2,25 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ClaudeCodeAdapter } from './adapters/claudeCode';
-import { InterventionEngine, ALL_QUIZ_TYPES, type AssessmentDepth, type QuizConfig } from './engine/interventionEngine';
+import { InterventionEngine, ALL_QUIZ_TYPES, countGrossLines, type AssessmentDepth, type QuizConfig } from './engine/interventionEngine';
 import { KnowledgeStateStore } from './storage/knowledgeState';
 import { CodebaseStoryStore } from './storage/codebaseStoryStore';
 import { VibeLearnPanel } from './ui/panel';
 import { logger } from './logger';
 import { AnalyticsLog, type AnalyticsEvent } from './storage/analyticsLog';
-import type { Intervention, InterventionType, SessionAdapter, TriggerReason } from './types';
+import type { ArchitecturalDecision, Intervention, InterventionType, SessionAdapter, TriggerReason } from './types';
 
 let adapter: SessionAdapter | undefined;
 let store: KnowledgeStateStore | undefined;
 let storyStore: CodebaseStoryStore | undefined;
 let analyticsLog: AnalyticsLog | undefined;
 let sessionGapTimer: NodeJS.Timeout | undefined;
+let archDebounceTimer: NodeJS.Timeout | undefined;
 let currentIntervention: Intervention | undefined;
+let pendingArchDecision: ArchitecturalDecision | undefined; // queued detection (max 1)
 let pendingEvent: AnalyticsEvent | undefined;
-let isGenerating = false; // concurrency guard — prevents overlapping API calls
+let isGenerating = false; // concurrency guard — prevents overlapping quiz/debrief API calls
+let isDetecting = false;  // concurrency guard — prevents overlapping arch detection calls
 let statusBarItem: vscode.StatusBarItem | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
@@ -70,6 +73,80 @@ export function activate(context: vscode.ExtensionContext): void {
   panel.onAnswer((answer, _webviewScore) => {
     if (!currentIntervention) return;
 
+    // architecture_check: evaluate with a second LLM call
+    if (currentIntervention.type === 'architecture_check' && currentIntervention.archDecision) {
+      const intervention = currentIntervention;
+      const apiKey = getSetting<string>('anthropicApiKey', '');
+      if (!apiKey) return;
+
+      isGenerating = true;
+      panel.showLoading('Evaluating your explanation…');
+
+      let engine: InterventionEngine;
+      try {
+        engine = new InterventionEngine(apiKey);
+      } catch (err) {
+        logger.error('InterventionEngine constructor failed', err);
+        isGenerating = false;
+        panel.showFeedback(true, intervention.body, intervention.conceptTags, {
+          title: intervention.title,
+          body: intervention.body,
+        });
+        return;
+      }
+
+      engine.evaluateExplanation(intervention.archDecision!, answer).then(({ score, feedback }) => {
+        // Write at 0.5x weight so arch decisions don't over-inflate SM-2 confidence
+        if (store) {
+          for (const tag of intervention.conceptTags) {
+            store.recordResult(tag, score * 0.5);
+          }
+        }
+
+        if (pendingEvent) {
+          analyticsLog?.append({ ...pendingEvent, answered: true, score });
+          pendingEvent = undefined;
+        }
+
+        panel.showFeedback(score >= 0.5, feedback, intervention.conceptTags, {
+          title: intervention.title,
+          body: intervention.body,
+        });
+
+        if (store) updatePanelLastConcept(panel, store);
+        currentIntervention = undefined;
+      }).catch((err) => {
+        logger.error('evaluateExplanation failed', err);
+        pendingArchDecision = undefined; // drop stale queue — context has changed
+        panel.showFeedback(true, intervention.body, intervention.conceptTags, {
+          title: intervention.title,
+          body: intervention.body,
+        });
+        currentIntervention = undefined;
+      }).finally(() => {
+        isGenerating = false;
+        // Surface queued detection after isGenerating clears (deferred to avoid race)
+        if (pendingArchDecision) {
+          setTimeout(() => {
+            if (!pendingArchDecision) return;
+            const queued = pendingArchDecision;
+            pendingArchDecision = undefined;
+            const queuedIntervention: Intervention = {
+              type: 'architecture_check',
+              title: queued.decisionName,
+              body: `${queued.tradeoffs}\n\n**The road not taken:** ${queued.counterfactual}`,
+              conceptTags: [queued.patternType],
+              difficultyScore: 3,
+              archDecision: queued,
+            };
+            currentIntervention = queuedIntervention;
+            panel.showIntervention(queuedIntervention);
+          }, 0);
+        }
+      });
+      return;
+    }
+
     let score: number;
     let isCorrect: boolean;
 
@@ -119,6 +196,23 @@ export function activate(context: vscode.ExtensionContext): void {
     if (pendingEvent) {
       analyticsLog?.append({ ...pendingEvent, skipped: true });
       pendingEvent = undefined;
+    }
+
+    // Surface any queued architectural detection after the current one is dismissed
+    // Guard: don't interrupt an in-flight generation
+    if (pendingArchDecision && !isGenerating) {
+      const queued = pendingArchDecision;
+      pendingArchDecision = undefined;
+      const queuedIntervention: Intervention = {
+        type: 'architecture_check',
+        title: queued.decisionName,
+        body: `${queued.tradeoffs}\n\n**The road not taken:** ${queued.counterfactual}`,
+        conceptTags: [queued.patternType],
+        difficultyScore: 3,
+        archDecision: queued,
+      };
+      currentIntervention = queuedIntervention;
+      panel.showIntervention(queuedIntervention);
     }
   });
 
@@ -170,6 +264,22 @@ function setupTriggerLoop(
       triggerIntervention('prompt_count', adapter, panel, store, storyStore);
     }
   });
+
+  // File watcher for architectural decision detection (5s debounce)
+  // Exclude node_modules, .git, dist, build — these produce high-volume noise
+  const fsWatcher = vscode.workspace.createFileSystemWatcher(
+    '**/*.{ts,tsx,js,jsx,py,go,rs,java,cs,rb,cpp,c,swift,kt}',
+    false, false, true // ignoreCreate=false, ignoreChange=false, ignoreDelete=true
+  );
+  const scheduleArchDetection = () => {
+    clearTimeout(archDebounceTimer);
+    archDebounceTimer = setTimeout(() => {
+      runArchDetection(adapter, panel, store);
+    }, 5000);
+  };
+  fsWatcher.onDidChange(scheduleArchDetection);
+  fsWatcher.onDidCreate(scheduleArchDetection);
+  context.subscriptions.push(fsWatcher);
 
   // Set initial counts
   const initialCount = adapter.getPromptCount();
@@ -371,6 +481,70 @@ async function runExplainCodebase(
     });
   } finally {
     isGenerating = false;
+  }
+}
+
+// ── Architectural decision detector ──────────────────────────────────────────
+
+async function runArchDetection(
+  adapter: SessionAdapter,
+  panel: VibeLearnPanel,
+  store: KnowledgeStateStore
+): Promise<void> {
+  if (isDetecting || isGenerating) return;
+
+  const apiKey = getSetting<string>('anthropicApiKey', '');
+  if (!apiKey) return;
+
+  const diffs = adapter.getUncommittedDiffs?.() ?? [];
+  if (diffs.length === 0) return;
+
+  // Only run detection on diffs with enough substance (>= 10 gross lines)
+  const substantialDiffs = diffs.filter((d) => countGrossLines(d.diff) >= 10);
+  if (substantialDiffs.length === 0) return;
+
+  isDetecting = true;
+  const engine = new InterventionEngine(apiKey);
+
+  try {
+    for (const diff of substantialDiffs) {
+      const decision = await engine.detectArchitecturalDecision(diff);
+      if (!decision) continue;
+
+      const intervention: Intervention = {
+        type: 'architecture_check',
+        title: decision.decisionName,
+        body: `${decision.tradeoffs}\n\n**The road not taken:** ${decision.counterfactual}`,
+        conceptTags: [decision.patternType],
+        difficultyScore: 3,
+        archDecision: decision,
+      };
+
+      if (isGenerating || currentIntervention?.type === 'architecture_check') {
+        // Queue it — replace any existing pending detection
+        pendingArchDecision = decision;
+        logger.log(`runArchDetection: queued decision (${decision.patternType}) — panel busy`);
+      } else {
+        currentIntervention = intervention;
+        panel.showIntervention(intervention);
+        pendingEvent = {
+          timestamp: new Date().toISOString(),
+          interventionType: 'architecture_check',
+          triggerReason: 'file_change',
+          answered: false,
+          skipped: false,
+          score: null,
+          apiLatencyMs: 0,
+          approxTokens: engine.lastTokens,
+        };
+        logger.log(`runArchDetection: surfaced decision (${decision.patternType})`);
+      }
+      break; // one detection per file-change event
+    }
+  } catch (err) {
+    logger.error('runArchDetection: detection failed', err);
+  } finally {
+    isDetecting = false;
   }
 }
 
