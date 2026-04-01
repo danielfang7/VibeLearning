@@ -28,4 +28,16 @@ export class AnalyticsLog {
       // analytics are best-effort — never throw
     }
   }
+
+  readAllEvents(): AnalyticsEvent[] {
+    try {
+      const raw = fs.readFileSync(this.filePath, 'utf-8');
+      return raw
+        .split('\n')
+        .filter(line => line.trim().length > 0)
+        .map(line => JSON.parse(line) as AnalyticsEvent);
+    } catch {
+      return [];
+    }
+  }
 }

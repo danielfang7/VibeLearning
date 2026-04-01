@@ -116,7 +116,7 @@ export function html(body: string): string {
   textarea:focus { outline: 1px solid var(--vscode-focusBorder); }
   .actions { margin-top: 16px; border-top: 1px solid var(--vscode-sideBarSectionHeader-border);
              padding-top: 12px; }
-  .idle    { text-align: center; padding-top: 32px; }
+  .idle    { text-align: center; padding-top: 8px; }
   .hint    { color: var(--vscode-descriptionForeground); font-size: 0.8rem; }
   .correct   { border-left: 3px solid var(--vscode-charts-green, #4caf50); padding-left: 12px; }
   .incorrect { border-left: 3px solid var(--vscode-charts-red, #f44336); padding-left: 12px; }
@@ -139,6 +139,14 @@ export function html(body: string): string {
   .chips { margin: 8px 0 12px; display: flex; flex-wrap: wrap; gap: 4px; }
   .chip  { display: inline-block; font-size: 0.7rem; padding: 2px 7px; border-radius: 10px;
            background: var(--vscode-badge-background); color: var(--vscode-badge-foreground); }
+  /* Panel header (idle view) */
+  .panel-header { display: flex; align-items: center; justify-content: space-between;
+                  margin-bottom: 20px; padding-bottom: 12px;
+                  border-bottom: 1px solid var(--vscode-sideBarSectionHeader-border); }
+  .panel-title  { font-size: 0.75rem; font-weight: 600; text-transform: uppercase;
+                  letter-spacing: 0.06em; color: var(--vscode-descriptionForeground); margin: 0; }
+  .arch-score-badge { font-size: 0.8rem; font-weight: 600;
+                      color: var(--vscode-button-background); white-space: nowrap; }
   /* Progress block (idle view) */
   .progress-block { margin-bottom: 20px; }
   .progress-dots  { font-size: 1rem; letter-spacing: 3px; color: var(--vscode-button-background);
