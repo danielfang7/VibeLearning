@@ -124,6 +124,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
         if (store) updatePanelLastConcept(panel, store);
         refreshArchScore();
+        refreshPatternInsights();
         currentIntervention = undefined;
       }).catch((err) => {
         logger.error('evaluateExplanation failed', err);
@@ -180,6 +181,7 @@ export function activate(context: vscode.ExtensionContext): void {
     }
 
     refreshArchScore();
+    refreshPatternInsights();
 
     const explanation =
       currentIntervention.answer
@@ -200,6 +202,7 @@ export function activate(context: vscode.ExtensionContext): void {
     store!.recordRating(stars, conceptTags);
     logger.log(`Debrief rated ${stars}/5 for concepts: ${conceptTags.join(', ')}`);
     refreshArchScore();
+    refreshPatternInsights();
   });
   panel.onOpenStory(() => {
     if (!storyStore) return;
@@ -237,6 +240,7 @@ export function activate(context: vscode.ExtensionContext): void {
   panel.setStoryEntryCount(storyStore.getAllEntries().length);
   updatePanelLastConcept(panel, store);
   refreshArchScore();
+  refreshPatternInsights();
 
   setupTriggerLoop(adapter, panel, store, storyStore, context);
 
@@ -647,6 +651,11 @@ function refreshArchScore(): void {
     archScoreBarItem.text = score === null ? 'Arch: —' : `Arch: ${score}`;
   }
   panel?.setArchScore(score);
+}
+
+function refreshPatternInsights(): void {
+  if (!store || !panel) return;
+  panel.setPatternInsights(store.getPatternInsights());
 }
 
 function getSetting<T>(key: string, defaultValue: T): T {

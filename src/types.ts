@@ -74,6 +74,15 @@ export interface CodebaseStoryEntry {
   conceptTags: string[];
 }
 
+/** Cross-session pattern insight derived from knowledge state. */
+export interface PatternInsight {
+  tag: string;               // concept name
+  seenCount: number;
+  avgScore: number;          // 0–1
+  kind: 'struggle' | 'owned'; // recurring struggle vs fully owned
+  message: string;           // human-readable insight
+}
+
 // PRD §9 — all adapters implement this interface
 export interface SessionAdapter {
   name: string;

@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import type { CodebaseStoryEntry, Intervention } from '../types';
+import type { CodebaseStoryEntry, Intervention, PatternInsight } from '../types';
 import { getIdleHtml, type LastConcept } from './views/idle';
 import { getInterventionHtml } from './views/intervention';
 import { getDebriefHtml } from './views/debrief';
@@ -35,6 +35,9 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
 
   // Architecture Literacy Score for the idle view (null = no data yet)
   private archScore: number | null = null;
+
+  // Cross-session pattern insights for the idle view
+  private patternInsights: PatternInsight[] = [];
 
   // Retry callback for the error view
   private retryCallback?: () => void;
@@ -218,6 +221,10 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
     this.archScore = score;
   }
 
+  setPatternInsights(insights: PatternInsight[]): void {
+    this.patternInsights = insights;
+  }
+
   // ── Callback registration ───────────────────────────────────────────────────
 
   onQuizNow(cb: () => void): void { this.onQuizNowCallback = cb; }
@@ -236,7 +243,8 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
       this.promptCount,
       this.promptThreshold,
       this.lastConcept,
-      this.archScore
+      this.archScore,
+      this.patternInsights
     );
   }
 }

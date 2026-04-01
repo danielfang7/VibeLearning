@@ -4,3 +4,5 @@ dist/
 *.js.map
 .DS_Store
 .env.local
+CLAUDE.md
+TODOS.md
