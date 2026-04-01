@@ -176,6 +176,12 @@ export function html(body: string): string {
                               margin: 0; line-height: 1.5; }
   .feedback-question-body pre { font-size: 0.75rem; margin: 6px 0 0; }
   .feedback-answer h2 { margin-top: 0; }
+  /* Pattern insight cards (idle view) */
+  .insight-section { margin-bottom: 16px; text-align: left; }
+  .insight-card { padding: 8px 12px; margin-bottom: 6px;
+                  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+                  border-radius: 3px; }
+  .insight-header { font-size: 0.825rem; margin-bottom: 2px; }
 </style>
 </head>
 <body>${body}</body>

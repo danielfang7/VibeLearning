@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import type { ConceptRecord, DebriefRating, KnowledgeState } from '../types';
+import type { ConceptRecord, DebriefRating, KnowledgeState, PatternInsight } from '../types';
 
 // JSON-file-backed knowledge state. Simple and dependency-free.
 // Stored at <VS Code globalStoragePath>/knowledge.json
@@ -65,6 +65,35 @@ export class KnowledgeStateStore {
     }
     this.state.debriefRatings.push(rating);
     this.save();
+  }
+
+  /** Return cross-session pattern insights from accumulated concept data. */
+  getPatternInsights(): PatternInsight[] {
+    const insights: PatternInsight[] = [];
+    for (const [tag, r] of Object.entries(this.state.concepts)) {
+      if (r.seenCount >= 3 && r.avgScore < 0.5) {
+        insights.push({
+          tag,
+          seenCount: r.seenCount,
+          avgScore: r.avgScore,
+          kind: 'struggle',
+          message: `You've seen ${tag} ${r.seenCount} times with ${Math.round(r.avgScore * 100)}% avg. Want to work on this?`,
+        });
+      } else if (r.seenCount >= 5 && r.avgScore >= 0.8) {
+        insights.push({
+          tag,
+          seenCount: r.seenCount,
+          avgScore: r.avgScore,
+          kind: 'owned',
+          message: `You've nailed ${tag} across ${r.seenCount} sessions. This one's yours.`,
+        });
+      }
+    }
+    // Show struggles first, then owned — most actionable at top
+    return insights.sort((a, b) => {
+      if (a.kind !== b.kind) return a.kind === 'struggle' ? -1 : 1;
+      return b.seenCount - a.seenCount;
+    });
   }
 
   dispose(): void {

@@ -1,4 +1,5 @@
 import { html, escHtml } from './shared';
+import type { PatternInsight } from '../../types';
 
 function renderProgressDots(count: number, total: number): string {
   const filled = Math.min(count % total === 0 && count > 0 ? total : count % total, total);
@@ -23,12 +24,32 @@ export interface LastConcept {
   avgScore: number; // 0–1
 }
 
+function renderInsightCards(insights: PatternInsight[]): string {
+  if (insights.length === 0) return '';
+  // Show up to 3 insights to avoid clutter
+  const cards = insights.slice(0, 3).map((i) => {
+    const icon = i.kind === 'struggle' ? '🔄' : '✅';
+    const colorVar = i.kind === 'struggle'
+      ? 'var(--vscode-charts-yellow, #e5a000)'
+      : 'var(--vscode-charts-green, #4caf50)';
+    return `<div class="insight-card" style="border-left: 3px solid ${colorVar};">
+      <div class="insight-header">${icon} <strong>${escHtml(i.tag)}</strong></div>
+      <div class="hint">${escHtml(i.message)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="insight-section">
+    <div class="hint" style="margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;">Pattern Insights</div>
+    ${cards}
+  </div>`;
+}
+
 export function getIdleHtml(
   storyEntryCount = 0,
   promptCount = 0,
   promptThreshold = 10,
   lastConcept?: LastConcept,
-  archScore?: number | null
+  archScore?: number | null,
+  patternInsights: PatternInsight[] = []
 ): string {
   const dots = renderProgressDots(promptCount, promptThreshold);
   const position = promptCount % promptThreshold;
@@ -52,6 +73,8 @@ export function getIdleHtml(
       </div>`
     : `<div class="last-concept"><p class="hint">Answer your first quiz to start tracking concepts.</p></div>`;
 
+  const insightsHtml = renderInsightCards(patternInsights);
+
   const storyHint =
     storyEntryCount > 0
       ? `<button class="secondary" onclick="postMsg('openStory')" style="width:100%; margin-top: 4px;">Codebase Story (${storyEntryCount}) →</button>`
@@ -68,6 +91,7 @@ export function getIdleHtml(
         <div class="hint">${escHtml(promptLabel)}</div>
       </div>
       ${lastConceptHtml}
+      ${insightsHtml}
       <button id="btn-quiz" onclick="triggerAction(this, 'quizNow', 'Generating quiz\u2026')" style="width: 100%;">Quiz Me Now</button>
       <button id="btn-explain" class="secondary" onclick="triggerAction(this, 'explainCodebase', 'Analyzing codebase\u2026')" style="width: 100%; margin-top: 4px;">Explain My Codebase</button>
       ${storyHint}
