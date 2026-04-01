@@ -33,6 +33,9 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
   // Last reinforced concept for the idle view
   private lastConcept?: LastConcept;
 
+  // Architecture Literacy Score for the idle view (null = no data yet)
+  private archScore: number | null = null;
+
   // Retry callback for the error view
   private retryCallback?: () => void;
 
@@ -211,6 +214,10 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
     this.lastConcept = { tag, lastSeen, avgScore };
   }
 
+  setArchScore(score: number | null): void {
+    this.archScore = score;
+  }
+
   // ── Callback registration ───────────────────────────────────────────────────
 
   onQuizNow(cb: () => void): void { this.onQuizNowCallback = cb; }
@@ -228,7 +235,8 @@ export class VibeLearnPanel implements vscode.WebviewViewProvider {
       this.storyEntryCount,
       this.promptCount,
       this.promptThreshold,
-      this.lastConcept
+      this.lastConcept,
+      this.archScore
     );
   }
 }

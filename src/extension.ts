@@ -14,6 +14,7 @@ let adapter: SessionAdapter | undefined;
 let store: KnowledgeStateStore | undefined;
 let storyStore: CodebaseStoryStore | undefined;
 let analyticsLog: AnalyticsLog | undefined;
+let panel: VibeLearnPanel | undefined;
 let sessionGapTimer: NodeJS.Timeout | undefined;
 let archDebounceTimer: NodeJS.Timeout | undefined;
 let currentIntervention: Intervention | undefined;
@@ -22,12 +23,13 @@ let pendingEvent: AnalyticsEvent | undefined;
 let isGenerating = false; // concurrency guard — prevents overlapping quiz/debrief API calls
 let isDetecting = false;  // concurrency guard — prevents overlapping arch detection calls
 let statusBarItem: vscode.StatusBarItem | undefined;
+let archScoreBarItem: vscode.StatusBarItem | undefined;
 
 export function activate(context: vscode.ExtensionContext): void {
   store = new KnowledgeStateStore(context.globalStorageUri.fsPath);
   analyticsLog = new AnalyticsLog(context.globalStorageUri.fsPath);
 
-  const panel = new VibeLearnPanel();
+  panel = new VibeLearnPanel();
   context.subscriptions.push(
     vscode.window.registerWebviewViewProvider(VibeLearnPanel.viewType, panel)
   );
@@ -39,6 +41,13 @@ export function activate(context: vscode.ExtensionContext): void {
   statusBarItem.text = '$(zap) 0/10';
   statusBarItem.show();
   context.subscriptions.push(statusBarItem);
+
+  // Architecture Literacy Score — 0-100 derived from engagement, avg score, recency
+  archScoreBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
+  archScoreBarItem.tooltip = 'Architecture Literacy Score — engagement with architectural concepts (0–100)';
+  archScoreBarItem.text = 'Arch: —';
+  archScoreBarItem.show();
+  context.subscriptions.push(archScoreBarItem);
 
   const quizNow = () => {
     if (!adapter) {
@@ -114,6 +123,7 @@ export function activate(context: vscode.ExtensionContext): void {
         });
 
         if (store) updatePanelLastConcept(panel, store);
+        refreshArchScore();
         currentIntervention = undefined;
       }).catch((err) => {
         logger.error('evaluateExplanation failed', err);
@@ -169,6 +179,8 @@ export function activate(context: vscode.ExtensionContext): void {
       pendingEvent = undefined;
     }
 
+    refreshArchScore();
+
     const explanation =
       currentIntervention.answer
         ? isCorrect
@@ -187,6 +199,7 @@ export function activate(context: vscode.ExtensionContext): void {
   panel.onRate((stars, conceptTags) => {
     store!.recordRating(stars, conceptTags);
     logger.log(`Debrief rated ${stars}/5 for concepts: ${conceptTags.join(', ')}`);
+    refreshArchScore();
   });
   panel.onOpenStory(() => {
     if (!storyStore) return;
@@ -223,6 +236,7 @@ export function activate(context: vscode.ExtensionContext): void {
   storyStore = new CodebaseStoryStore(workspacePath);
   panel.setStoryEntryCount(storyStore.getAllEntries().length);
   updatePanelLastConcept(panel, store);
+  refreshArchScore();
 
   setupTriggerLoop(adapter, panel, store, storyStore, context);
 
@@ -240,6 +254,7 @@ export function deactivate(): void {
   adapter?.dispose();
   store?.dispose();
   statusBarItem?.dispose();
+  archScoreBarItem?.dispose();
   clearTimeout(sessionGapTimer);
   logger.dispose();
 }
@@ -594,6 +609,44 @@ function offerGitignoreUpdate(workspacePath: string | undefined): void {
       logger.error('Failed to update .gitignore', err);
     }
   });
+}
+
+function computeArchitectureLiteracyScore(
+  store: KnowledgeStateStore,
+  analyticsLog: AnalyticsLog
+): number | null {
+  const concepts = Object.values(store.getState().concepts);
+  if (concepts.length === 0) return null;
+
+  // engagementRate: fraction of finalized events that were answered (not skipped)
+  const events = analyticsLog.readAllEvents();
+  const finalized = events.filter(e => e.answered || e.skipped);
+  const engagementRate = finalized.length === 0
+    ? 0
+    : finalized.filter(e => e.answered).length / finalized.length;
+
+  // avgScore: mean of per-concept running averages (0–1)
+  const avgScore = concepts.reduce((sum, c) => sum + c.avgScore, 0) / concepts.length;
+
+  // recencyFactor: 1.0 if active within 7 days, decays to 0 over the following 30 days
+  const mostRecentMs = concepts
+    .map(c => new Date(c.lastSeen).getTime())
+    .reduce((max, t) => Math.max(max, t), 0);
+  const daysSince = (Date.now() - mostRecentMs) / 86_400_000;
+  const recencyFactor = daysSince <= 7
+    ? 1.0
+    : Math.max(0, 1 - (daysSince - 7) / 30);
+
+  return Math.round(((engagementRate * 0.4) + (avgScore * 0.4) + (recencyFactor * 0.2)) * 100);
+}
+
+function refreshArchScore(): void {
+  if (!store || !analyticsLog) return;
+  const score = computeArchitectureLiteracyScore(store, analyticsLog);
+  if (archScoreBarItem) {
+    archScoreBarItem.text = score === null ? 'Arch: —' : `Arch: ${score}`;
+  }
+  panel?.setArchScore(score);
 }
 
 function getSetting<T>(key: string, defaultValue: T): T {

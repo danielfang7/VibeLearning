@@ -27,7 +27,8 @@ export function getIdleHtml(
   storyEntryCount = 0,
   promptCount = 0,
   promptThreshold = 10,
-  lastConcept?: LastConcept
+  lastConcept?: LastConcept,
+  archScore?: number | null
 ): string {
   const dots = renderProgressDots(promptCount, promptThreshold);
   const position = promptCount % promptThreshold;
@@ -38,6 +39,10 @@ export function getIdleHtml(
       : left === 1
         ? 'quiz next prompt'
         : `${position} / ${promptThreshold} prompts`;
+
+  const archScoreBadge = archScore != null
+    ? `<span class="arch-score-badge">Arch: ${archScore}</span>`
+    : `<span class="arch-score-badge" style="color: var(--vscode-descriptionForeground)">Arch: —</span>`;
 
   const lastConceptHtml = lastConcept
     ? `<div class="last-concept">
@@ -54,6 +59,10 @@ export function getIdleHtml(
 
   return html(`
     <div class="idle">
+      <div class="panel-header">
+        <span class="panel-title">⚡ VibeLearning</span>
+        ${archScoreBadge}
+      </div>
       <div class="progress-block">
         <div class="progress-dots">${dots}</div>
         <div class="hint">${escHtml(promptLabel)}</div>
